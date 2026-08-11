@@ -1,0 +1,83 @@
+openapi: 3.1.0
+info:
+  title: Joi Mobile Official Proxy
+  version: 0.1.0
+  description: Contract-first local mock boundary. Production providers and credentials are server-side only.
+servers:
+  - url: http://127.0.0.1:8787
+    description: Local mock only
+paths:
+  /health:
+    get:
+      operationId: health
+      responses:
+        "200":
+          description: Healthy local mock
+  /v1/chat/streams:
+    post:
+      operationId: streamChat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+      responses:
+        "200":
+          description: Server-sent CompanionEventV1 records
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /v1/routes:
+    post:
+      operationId: planWalkingRoute
+      responses:
+        "200":
+          description: Normalized Valhalla-compatible walking route
+  /v1/sync/push:
+    post:
+      operationId: pushSyncPage
+      responses:
+        "200":
+          description: Accepted records and next cursor
+  /v1/sync/pull:
+    post:
+      operationId: pullSyncPage
+      responses:
+        "200":
+          description: Records and next cursor
+components:
+  schemas:
+    ChatRequest:
+      type: object
+      additionalProperties: false
+      required: [requestID, threadID, sessionID, characterID, text, displayLocale, voiceLocale]
+      dependentRequired:
+        journeyAttachment: [journeyReceipt]
+        journeyReceipt: [journeyAttachment]
+      properties:
+        requestID: { type: string }
+        threadID: { type: string }
+        sessionID: { type: string }
+        characterID: { type: string }
+        text: { type: string, maxLength: 20000 }
+        displayLocale: { enum: [zh-Hans, zh-Hant, en, ja, ko] }
+        voiceLocale: { type: string }
+        journeyAttachment:
+          $ref: "./journey-context-snapshot-v1.schema.json"
+        journeyReceipt:
+          type: object
+          additionalProperties: false
+          required: [receiptID, purpose, userAction, payloadDigest, precision, threadID, requestID, issuedAt, expiresAt, revoked]
+          properties:
+            receiptID: { type: string }
+            purpose: { const: chatOneTurn }
+            userAction: { type: string, minLength: 1 }
+            payloadDigest: { type: string, pattern: "^[a-f0-9]{64}$" }
+            precision: { type: string }
+            threadID: { type: string }
+            requestID: { type: string }
+            issuedAt: { type: string, format: date-time }
+            expiresAt: { type: string, format: date-time }
+            revoked: { type: boolean }

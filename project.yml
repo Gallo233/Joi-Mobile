@@ -1,0 +1,97 @@
+name: JoiMobile
+options:
+  minimumXcodeGenVersion: 2.46.0
+  deploymentTarget:
+    iOS: "26.0"
+  developmentLanguage: zh-Hans
+  xcodeVersion: "26.6"
+  createIntermediateGroups: true
+  localPackagesGroup: Packages
+configs:
+  Debug: debug
+  Release: release
+packages:
+  CompanionCore:
+    path: Packages/CompanionCore
+  CharacterRuntime:
+    path: Packages/CharacterRuntime
+  ChatFeature:
+    path: Packages/ChatFeature
+  MapFeature:
+    path: Packages/MapFeature
+  OfflinePack:
+    path: Packages/OfflinePack
+  SyncClient:
+    path: Packages/SyncClient
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    ENABLE_USER_SCRIPT_SANDBOXING: true
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 0.1.0
+targets:
+  JoiMobile:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: JoiMobile
+    info:
+      path: JoiMobile/Info.plist
+      properties:
+        CFBundleDisplayName: Joi
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSMicrophoneUsageDescription: 仅在你按住说话时，Joi 才会使用麦克风。
+        NSLocationWhenInUseUsageDescription: 仅在可见的文化步行或地点请求中，Joi 才会使用你的位置。
+        NSCameraUsageDescription: 仅在你主动使用“看见就问”时，Joi 才会使用相机。
+        NSPhotoLibraryUsageDescription: Joi 只会读取你为地点提问主动选择的照片。
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.joi.mobile
+        GENERATE_INFOPLIST_FILE: false
+        CODE_SIGNING_ALLOWED: false
+    dependencies:
+      - package: CompanionCore
+      - package: CharacterRuntime
+      - package: ChatFeature
+      - package: MapFeature
+      - package: OfflinePack
+      - package: SyncClient
+  JoiMobileTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Tests/Swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.joi.mobile.tests
+        GENERATE_INFOPLIST_FILE: true
+        CODE_SIGNING_ALLOWED: false
+    dependencies:
+      - target: JoiMobile
+      - package: CompanionCore
+schemes:
+  JoiMobile:
+    build:
+      targets:
+        JoiMobile: all
+        JoiMobileTests: [test]
+    test:
+      targets:
+        - JoiMobileTests
+    run:
+      config: Debug
+    archive:
+      config: Release
+fileGroups:
+  - README.md
+  - AGENTS.md
+  - docs
+  - Contracts
+  - Backend

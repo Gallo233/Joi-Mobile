@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.joi.local/companion-event-v1.schema.json",
+  "title": "CompanionEventV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "eventID", "requestID", "threadID", "sessionID", "characterID", "timestamp", "phase", "contentState", "memoryEligibility", "sources"],
+  "properties": {
+    "schema": { "const": "joi.companion-event.v1" },
+    "eventID": { "type": "string", "minLength": 1 },
+    "requestID": { "type": "string", "minLength": 1 },
+    "threadID": { "type": "string", "minLength": 1 },
+    "sessionID": { "type": "string", "minLength": 1 },
+    "characterID": { "type": "string", "minLength": 1 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "phase": { "enum": ["idle", "received", "understanding", "thinking", "acting", "waiting", "paused", "done", "failed"] },
+    "contentState": { "enum": ["partial", "acceptedInput", "streamingDraft", "acceptedFinal", "cancelled", "failed"] },
+    "displayText": { "type": ["string", "null"] },
+    "voiceLine": { "type": ["string", "null"] },
+    "memoryEligibility": { "enum": ["none", "proposalAllowed"] },
+    "sources": { "type": "array", "items": { "$ref": "#/$defs/sourceProjectionV1" } },
+    "errorCode": { "type": ["string", "null"] }
+  },
+  "$defs": {
+    "sourceProjectionV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["placeID", "claimID", "identityConfidence", "claimSupportConfidence", "publisher", "title", "locator", "authority", "revision", "retrievedAt", "conflictStatus", "correctionStatus", "rights", "withdrawn"],
+      "properties": {
+        "placeID": { "type": ["string", "null"] },
+        "claimID": { "type": "string", "minLength": 1 },
+        "identityConfidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "claimSupportConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "publisher": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "locator": { "type": "string", "minLength": 1 },
+        "authority": { "enum": ["primary", "official", "institutional", "secondary", "community"] },
+        "revision": { "type": "string", "minLength": 1 },
+        "retrievedAt": { "type": "string", "format": "date-time" },
+        "conflictStatus": { "enum": ["none", "disputed", "unresolved", "resolved"] },
+        "correctionStatus": { "enum": ["current", "corrected", "retracted", "pendingReview"] },
+        "rights": { "type": "string", "minLength": 1 },
+        "withdrawn": { "type": "boolean" }
+      }
+    }
+  }
+}

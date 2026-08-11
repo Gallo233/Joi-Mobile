@@ -1,0 +1,33 @@
+{
+  "schema": "joi.companion-event.v1",
+  "eventID": "event-1",
+  "requestID": "request-1",
+  "threadID": "thread-1",
+  "sessionID": "session-1",
+  "characterID": "joi.starter",
+  "timestamp": "2026-08-11T00:00:00Z",
+  "phase": "done",
+  "contentState": "acceptedFinal",
+  "displayText": "Hello",
+  "voiceLine": "Hello",
+  "memoryEligibility": "proposalAllowed",
+  "sources": [
+    {
+      "placeID": "place.shanghai.bund",
+      "claimID": "claim.history.001",
+      "identityConfidence": 0.96,
+      "claimSupportConfidence": 0.91,
+      "publisher": "Joi Mobile test fixture",
+      "title": "外滩历史资料测试条目",
+      "locator": "fixture://sources/bund-history",
+      "authority": "institutional",
+      "revision": "2026-08-11",
+      "retrievedAt": "2026-08-11T00:00:00Z",
+      "conflictStatus": "none",
+      "correctionStatus": "current",
+      "rights": "Repository-authored contract fixture",
+      "withdrawn": false
+    }
+  ],
+  "errorCode": null
+}

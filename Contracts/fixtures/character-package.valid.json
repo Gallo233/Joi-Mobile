@@ -1,0 +1,23 @@
+{
+  "schema": "joi.character.v1",
+  "packageID": "joi.fixture.static",
+  "characterID": "joi.starter",
+  "version": "1.0.0",
+  "displayName": "Joi",
+  "renderer": "static",
+  "entryPath": "portrait.png",
+  "portraitPath": "portrait.png",
+  "locales": ["zh-Hans"],
+  "assets": [
+    {
+      "path": "portrait.png",
+      "mediaType": "image/png",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "provenance": {
+    "author": "Joi Mobile fixture",
+    "license": "Repository test metadata only",
+    "source": null
+  }
+}

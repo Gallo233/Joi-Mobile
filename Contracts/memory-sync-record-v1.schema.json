@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.joi.local/memory-sync-record-v1.schema.json",
+  "title": "MemorySyncRecordV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["recordID", "category", "characterID", "revision", "deviceID", "operation", "updatedAt"],
+  "properties": {
+    "recordID": { "type": "string", "minLength": 1 },
+    "category": { "enum": ["profile", "preference", "relationship", "travelRecap", "preciseLocation", "protectedNeverSync"] },
+    "characterID": { "type": "string", "minLength": 1 },
+    "encryptedPayload": { "type": ["string", "null"] },
+    "revision": { "type": "integer", "minimum": 1 },
+    "deviceID": { "type": "string", "minLength": 1 },
+    "operation": { "enum": ["upsert", "tombstone"] },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}
