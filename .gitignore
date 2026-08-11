@@ -11,3 +11,11 @@ Backend/.env
 __pycache__/
 *.pyc
 *.log
+
+# Local character compatibility fixtures are selected explicitly at test time.
+# Never copy licensed/private model payloads into this repository.
+.private-character-fixtures/
+PrivateFixtures/
+*.moc3
+*.vrm
+*.vrma

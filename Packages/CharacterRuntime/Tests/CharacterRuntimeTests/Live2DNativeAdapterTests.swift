@@ -1,4 +1,4 @@
-import CompanionCore
+@_spi(CharacterPackageInstaller) import CompanionCore
 import Foundation
 import XCTest
 @testable import CharacterRuntime

@@ -30,6 +30,35 @@ final class CharacterPackageValidatorTests: XCTestCase {
         XCTAssertThrowsError(try CharacterPackageValidator().validate(candidate))
     }
 
+    func testRejectsExpansionRatioAboveTwentyWithoutIntegerTruncation() {
+        let candidate = CharacterPackageCandidate(
+            archiveBytes: 100,
+            expandedBytes: 2_001,
+            paths: ["manifest.json"],
+            manifest: manifest(assets: [])
+        )
+
+        XCTAssertThrowsError(try CharacterPackageValidator().validate(candidate)) { error in
+            XCTAssertEqual(
+                error as? CharacterPackageValidationError,
+                .expansionRatioExceeded
+            )
+        }
+    }
+
+    func testRejectsNegativePackageSizes() {
+        let candidate = CharacterPackageCandidate(
+            archiveBytes: -1,
+            expandedBytes: 0,
+            paths: ["manifest.json"],
+            manifest: manifest(assets: [])
+        )
+
+        XCTAssertThrowsError(try CharacterPackageValidator().validate(candidate)) { error in
+            XCTAssertEqual(error as? CharacterPackageValidationError, .invalidSize)
+        }
+    }
+
     private func manifest(assets: [CharacterAssetV1]) -> CharacterPackageManifestV1 {
         CharacterPackageManifestV1(
             packageID: "package",

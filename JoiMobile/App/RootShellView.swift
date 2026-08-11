@@ -15,15 +15,32 @@ struct RootShellView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            SurfaceSwitcher(selection: model.selectedSurface) { surface in
-                withAnimation(.snappy(duration: 0.25)) {
-                    model.select(surface)
+            HStack(spacing: 10) {
+                SurfaceSwitcher(selection: model.selectedSurface) { surface in
+                    withAnimation(.snappy(duration: 0.25)) {
+                        model.select(surface)
+                    }
                 }
+
+                Button {
+                    model.presentCharacterLibrary()
+                } label: {
+                    Image(systemName: "person.2.crop.square.stack.fill")
+                        .font(.headline)
+                        .frame(width: 50, height: 50)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("角色库")
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 10)
         }
         .background(Color(.systemGroupedBackground))
+        .sheet(isPresented: $model.isCharacterLibraryPresented) {
+            CharacterLibraryView(model: model)
+        }
     }
 }
 
@@ -37,6 +54,7 @@ private struct SurfaceSwitcher: View {
             button(for: .map, title: String(localized: "地图"), symbol: "map.fill")
         }
         .padding(6)
+        .frame(maxWidth: .infinity)
         .background(.ultraThinMaterial, in: Capsule())
         .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
         .accessibilityElement(children: .contain)

@@ -9,6 +9,7 @@ public enum CharacterPackageLimits {
 }
 
 public enum CharacterPackageValidationError: Error, Equatable, Sendable {
+    case invalidSize
     case unsupportedSchema
     case tooManyFiles
     case archiveTooLarge
@@ -46,6 +47,9 @@ public struct CharacterPackageValidator: Sendable {
     public init() {}
 
     public func validate(_ candidate: CharacterPackageCandidate) throws {
+        guard candidate.archiveBytes >= 0, candidate.expandedBytes >= 0 else {
+            throw CharacterPackageValidationError.invalidSize
+        }
         guard candidate.manifest.schema == "joi.character.v1" else {
             throw CharacterPackageValidationError.unsupportedSchema
         }
@@ -58,8 +62,9 @@ public struct CharacterPackageValidator: Sendable {
         guard candidate.paths.count <= CharacterPackageLimits.maximumFileCount else {
             throw CharacterPackageValidationError.tooManyFiles
         }
-        let ratio = candidate.expandedBytes / max(candidate.archiveBytes, 1)
-        guard ratio <= CharacterPackageLimits.maximumExpansionRatio else {
+        let effectiveArchiveBytes = max(candidate.archiveBytes, 1)
+        let maximumExpandedBytes = effectiveArchiveBytes * CharacterPackageLimits.maximumExpansionRatio
+        guard candidate.expandedBytes <= maximumExpandedBytes else {
             throw CharacterPackageValidationError.expansionRatioExceeded
         }
 

@@ -90,6 +90,7 @@ public struct ValidatedCharacterPackageHandle: Equatable, Sendable {
     public let manifest: CharacterPackageManifestV1
     public let receipt: CharacterPackageValidationReceiptV1
 
+    @_spi(CharacterPackageInstaller)
     public init(
         installationID: String,
         immutableRootID: String,

@@ -323,6 +323,25 @@ Before device evidence, deterministic local budgets are: 50 load/cancel/release 
 
 Adaptive quality reacts to thermal/process/memory signals through renderer policy: reduce update rate and secondary physics, pause when hidden, honor Reduce Motion, then fall back statically. Only real-device measurement can set public thresholds or close ≥30 FPS/30-minute thermal gates.
 
+### 6.4 G2-J1A — Chinese private-fixture preflight and preview
+
+`G2-J1A` is a bounded sub-gate of G2 for the first part of PRD Journey 1. It proves an explicitly selected local character can be inspected, shown in a Chinese compatibility preview and routed to an honest static fallback without changing the active companion. It does **not** close complete archive import, installation, activation, native rendering, G4 device evidence or G5 rights.
+
+| Slice ID | Acceptance | Evidence |
+|---|---|---|
+| `J1A-01` | A test or debug caller supplies a private local fixture explicitly; production sources, committed metadata and receipts contain no absolute local path | repository policy test and private-lane invocation |
+| `J1A-02` | Preflight rejects missing, unexpected, non-regular, symbolically linked, escaping, oversized or hash-mismatched content and never issues a runtime handle or calls a renderer | CharacterRuntime synthetic fixture tests |
+| `J1A-03` | The real private Live2D fixture reports its declared textures, Motion, Physics, Pose, EyeBlink and LipSync; an absent Expression declaration is reported as absent, not failed | opt-in private Live2D test |
+| `J1A-04` | The real private VRM fixture is identified as VRM 0.x and reports only capabilities present in its metadata; it cannot prove VRM 1.0 or VRMA | opt-in private VRM test |
+| `J1A-05` | The secondary Character Library preview shows format, detected and absent capabilities, provenance/rights state and static fallback in editable `zh-Hans` copy without claiming native success | App model/UI tests and String Catalog check |
+| `J1A-06` | Preview, rejection, cancellation and runtime-unavailable fallback do not mutate the current character, thread, memory, journey or permissions | App state-ownership test and adapter fallback tests |
+| `J1A-07` | Private payloads and vendor runtimes are absent from Git and the generated App bundle, and no external runtime dependency is added | repository policy and bundle audit |
+| `J1A-08` | Public synthetic tests are reproducible without private assets; this workstation also runs the two private fixture cases rather than counting skips as Gate evidence | public suite plus separately recorded private-lane command |
+
+The private baselines are receipt metadata, not redistributable fixtures: `L2D-HIYORI-PRIVATE-01` (桃瀬ひより, license/character-use acceptance and Live2D publication conditions still open) and `VRM0-AVATAR-A-PRIVATE-01` (`AvatarSample_A`, embedded redistribution signal still requires a retained source/rights receipt before inclusion). Raw paths and payloads stay outside the repository, App bundle, logs and uploads. The ordinary consumer initializer for `ValidatedCharacterPackageHandle` is unavailable; the installer SPI exists to prevent accidental bypass, while filesystem isolation and revalidation remain the actual trust boundary.
+
+The next Journey 1 slice (`J1B`) must implement streaming archive/raw-file wrapping, magic/type validation, immutable content-addressed installation, activation/removal, mutation revalidation and the full malicious-package corpus from Section 9 before `JM-P0-015` or `JM-P0-017` can close.
+
 ## 7. Map, navigation and offline PoC
 
 - Wrap MapLibre Native in `MapSurfaceProvider`; it renders online styles and verified downloaded corridor resources but never owns route truth.
