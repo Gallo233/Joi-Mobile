@@ -53,8 +53,12 @@ class ContractArtifactTests(unittest.TestCase):
         )
         keys = catalog["strings"]
         source = (ROOT / "JoiMobile/App/ChatStageView.swift").read_text(encoding="utf-8")
-        # Chinese string literals, with Swift interpolation normalised to %@.
-        literals = re.findall(r'"([^"\\\n]*[一-鿿][^"\\\n]*)"', source)
+        # Chinese string literals, with Swift interpolation normalised to %@. The
+        # segment alternation must admit `\(...)` explicitly: a regex that simply
+        # excludes backslashes skips every interpolated string, which is the exact
+        # case this guard exists to check.
+        segment = r'(?:[^"\\\n]|\\\([^()]*\))'
+        literals = re.findall(rf'"({segment}*[一-鿿]{segment}*)"', source)
         missing = [
             normalised
             for literal in literals

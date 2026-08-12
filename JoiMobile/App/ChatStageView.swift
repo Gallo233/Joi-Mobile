@@ -113,9 +113,22 @@ struct ChatStageView: View {
         switch model.chatTurnState {
         case .idle:
             EmptyView()
-        case let .pending(text, _):
-            VStack(alignment: .trailing, spacing: 6) {
+        case let .pending(text, _, draft):
+            VStack(alignment: .trailing, spacing: 8) {
                 PendingBubble(text: text)
+                if let draft, !draft.isEmpty {
+                    // Replaceable projection, not an accepted line: it carries no
+                    // selection or memory affordance until the turn completes.
+                    HStack {
+                        Text(draft)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            .foregroundStyle(.primary)
+                        Spacer(minLength: 40)
+                    }
+                    .accessibilityLabel("\(characterName) 正在输入：\(draft)")
+                }
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("\(characterName) 正在回应")
@@ -128,7 +141,6 @@ struct ChatStageView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .accessibilityElement(children: .combine)
         case .cancelled:
             statusLine("已停止这次回应；对话没有变化。", symbol: "stop.circle", tint: .secondary)
         case let .failed(message, retryable):

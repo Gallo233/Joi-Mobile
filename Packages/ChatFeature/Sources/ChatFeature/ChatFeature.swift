@@ -16,6 +16,17 @@ public actor ChatSessionController {
     }
 
     public func send(_ request: ChatRequest) async throws -> [CompanionEventV1] {
+        try await send(request) { _ in }
+    }
+
+    /// Streaming variant: `onEvent` runs for each event that passes identity
+    /// filtering, as it arrives, so a caller can show progress instead of
+    /// waiting for the terminal event. The returned array is unchanged, so the
+    /// non-streaming `send(_:)` above stays behaviourally identical.
+    public func send(
+        _ request: ChatRequest,
+        onEvent: @escaping @Sendable (CompanionEventV1) async -> Void
+    ) async throws -> [CompanionEventV1] {
         try await receiptStore.consume(for: request)
         currentTask?.cancel()
         currentRequestID = request.requestID
@@ -30,6 +41,7 @@ public actor ChatSessionController {
                     throw ChatSessionError.foreignEvent
                 }
                 events.append(event)
+                await onEvent(event)
             }
             try Task.checkCancellation()
             return events

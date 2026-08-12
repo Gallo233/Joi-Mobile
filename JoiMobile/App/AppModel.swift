@@ -26,7 +26,9 @@ enum CharacterLibraryState: Equatable, Sendable {
 /// returns its `acceptedInput` event, so a turn can never append twice.
 enum ChatTurnState: Equatable, Sendable {
     case idle
-    case pending(text: String, phase: CompanionPublicPhase)
+    /// `draft` is the replaceable in-progress projection of the companion's
+    /// answer. It is never an accepted transcript line.
+    case pending(text: String, phase: CompanionPublicPhase, draft: String?)
     case cancelled
     case failed(message: String, retryable: Bool)
 
@@ -170,9 +172,11 @@ final class AppModel {
         }
 
         chatRequestID = requestID
-        chatTurnState = .pending(text: text, phase: .received)
+        chatTurnState = .pending(text: text, phase: .received, draft: nil)
         do {
-            let events = try await chatController.send(request)
+            let events = try await chatController.send(request) { [weak self] event in
+                await self?.observeInFlight(event, pendingText: text, requestID: requestID)
+            }
             try Task.checkCancellation()
             guard chatRequestID == requestID else { return }
             await apply(events, threadID: snapshot.threadID, requestID: requestID)
@@ -184,6 +188,24 @@ final class AppModel {
             guard chatRequestID == requestID else { return }
             chatRequestID = nil
             chatTurnState = chatFailure(for: error)
+        }
+    }
+
+    /// Shows progress while the turn is still open. It only ever updates the
+    /// replaceable draft and phase; acceptance happens once, in `apply`, after
+    /// the stream reaches its terminal event.
+    private func observeInFlight(
+        _ event: CompanionEventV1,
+        pendingText: String,
+        requestID: String
+    ) {
+        guard chatRequestID == requestID, chatTurnState.isPending else { return }
+        guard case let .pending(_, _, existingDraft) = chatTurnState else { return }
+        switch chatProjection.effect(of: event) {
+        case let .draft(text):
+            chatTurnState = .pending(text: pendingText, phase: event.phase, draft: text ?? existingDraft)
+        case .append, .status, .diagnostic:
+            chatTurnState = .pending(text: pendingText, phase: event.phase, draft: existingDraft)
         }
     }
 
@@ -206,12 +228,7 @@ final class AppModel {
                 latestPhase = event.phase
             case let .diagnostic(phase, errorCode):
                 latestPhase = phase
-                diagnostic = .failed(
-                    message: errorCode == nil
-                        ? String(localized: "这次回应没有完成；对话没有变化。")
-                        : String(localized: "服务暂时无法回应，请稍后再试。"),
-                    retryable: errorCode != nil
-                )
+                diagnostic = Self.diagnosticFailure(errorCode)
             }
         }
         guard chatRequestID == requestID else { return }
@@ -223,6 +240,22 @@ final class AppModel {
         } else {
             // A stream that ended before a terminal event is not a success.
             chatTurnState = .failed(message: String(localized: "这次回应没有完成；对话没有变化。"), retryable: true)
+        }
+    }
+
+    /// Maps the proxy's stable, provider-independent `errorCode` values. The
+    /// backend deliberately never names a provider or model, so an unrecognised
+    /// code must still degrade to honest copy rather than raw text.
+    static func diagnosticFailure(_ errorCode: String?) -> ChatTurnState {
+        switch errorCode {
+        case nil:
+            return .failed(message: String(localized: "这次回应没有完成；对话没有变化。"), retryable: true)
+        case "upstream_unavailable":
+            return .failed(message: String(localized: "服务暂时无法回应，请稍后再试。"), retryable: true)
+        case "upstream_rejected":
+            return .failed(message: String(localized: "这次请求未获授权；对话没有变化。"), retryable: false)
+        default:
+            return .failed(message: String(localized: "这次回应没有完成；对话没有变化。"), retryable: true)
         }
     }
 

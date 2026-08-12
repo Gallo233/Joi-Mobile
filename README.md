@@ -28,6 +28,25 @@ xcodebuild -project JoiMobile.xcodeproj -scheme JoiMobile -destination 'generic/
 
 See `AGENTS.md` for Studio routing and required checks.
 
+## Running a conversation locally
+
+Chat needs a backend on `http://127.0.0.1:8787`. Two are provided, and the app talks to both through the same `/v1/chat/streams` contract.
+
+Deterministic contract mock, no network and no credential — this is what the test lanes use:
+
+```bash
+Backend/.venv/bin/python Backend/mock_server.py
+```
+
+Real provider, for actually talking to your character. The credential is read from the process environment only; never place it in a file inside this repository, a build setting or an Xcode scheme:
+
+```bash
+export DEEPSEEK_API_KEY=...
+Backend/.venv/bin/python Backend/proxy_server.py
+```
+
+The proxy exits rather than starting without a key, so a missing credential cannot degrade into a silently faked answer. The provider and model are server-side facts: client frames carry only `joi.companion-event.v1` fields and the stable codes `upstream_unavailable`, `upstream_rejected` and `upstream_malformed`. Plain HTTP is accepted only on loopback; every other host must be HTTPS.
+
 ## Private character compatibility lane
 
 The private compatibility lane can inspect and locally import a selected Live2D `.model3.json` tree or VRM file without copying the asset into this repository. The committed values below are fingerprints only; the model payloads remain private and must not be bundled, logged, uploaded or pushed.
