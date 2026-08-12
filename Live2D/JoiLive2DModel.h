@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <Metal/Metal.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -24,6 +25,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// Initialises the Cubism Framework once per process. Safe to call repeatedly.
 + (BOOL)startRuntime;
 
+/// Must be called with the render device before any model is loaded.
++ (void)configureRenderDevice:(id<MTLDevice>)device;
+
 /// Loads a `.moc3` and its model3 graph from a directory on disk.
 /// Returns nil and fills `error` rather than trapping, so an unsupported or
 /// corrupt model degrades to the static fallback.
@@ -35,6 +39,25 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Advances motion, physics and breath by `seconds`.
 - (void)updateWithDelta:(NSTimeInterval)seconds;
+
+/// Creates the Metal renderer and uploads the model's textures. Returns NO when
+/// any texture is missing, so the caller can fall back rather than draw a
+/// partially textured model.
+///
+/// The mask size must be the drawable size in pixels, not the model canvas:
+/// sizing it from the canvas leaves clipped parts drawn as opaque quads.
+- (BOOL)prepareRendererWithDevice:(id<MTLDevice>)device
+                       maskWidth:(NSUInteger)maskWidth
+                      maskHeight:(NSUInteger)maskHeight;
+
+/// Draws one frame. `scaleX`/`scaleY` are the model-to-clip scale and
+/// `translateY` shifts the framing; the caller owns aspect and framing policy.
+- (void)drawWithCommandBuffer:(id<MTLCommandBuffer>)commandBuffer
+         renderPassDescriptor:(MTLRenderPassDescriptor *)renderPassDescriptor
+                     viewport:(MTLViewport)viewport
+                       scaleX:(float)scaleX
+                       scaleY:(float)scaleY
+                   translateY:(float)translateY;
 
 /// Releases the model and its Core allocation exactly once.
 - (void)shutdown;

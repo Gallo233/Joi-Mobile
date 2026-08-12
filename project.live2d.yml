@@ -65,6 +65,8 @@ targets:
           - $(SRCROOT)/Vendor/Live2D/Framework/src/Rendering/Metal/Shaders/VertShaderSrcBlend.metal
           - $(SRCROOT)/Vendor/Live2D/Framework/src/Rendering/Metal/Shaders/VertShaderSrcMaskedBlend.metal
           - $(SRCROOT)/Vendor/Live2D/Framework/src/Rendering/Metal/Shaders/MetalShaderTypes.h
+          - $(SRCROOT)/Vendor/Live2D/Framework/src/Rendering/Metal/Shaders/BlendShaderStructs.h
+          - $(SRCROOT)/Vendor/Live2D/Framework/src/Rendering/Metal/Shaders/BlendShaderFuncs.h
         outputFiles:
           - $(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/FrameworkMetallibs/MetalShaders.metallib
           - $(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/FrameworkMetallibs/VertShaderSrcBlend.metallib

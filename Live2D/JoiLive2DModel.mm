@@ -1,12 +1,16 @@
 #import "JoiLive2DModel.h"
 
+#import <MetalKit/MetalKit.h>
+
 #import <CubismFramework.hpp>
 #import <CubismDefaultParameterId.hpp>
 #import <CubismModelSettingJson.hpp>
 #import <Id/CubismIdManager.hpp>
+#import <Math/CubismMatrix44.hpp>
 #import <Model/CubismUserModel.hpp>
 #import <Motion/CubismMotion.hpp>
 #import <Physics/CubismPhysics.hpp>
+#import <Rendering/Metal/CubismRenderer_Metal.hpp>
 #import <Utils/CubismString.hpp>
 
 #include <string>
@@ -127,6 +131,39 @@ public:
 
     Csm::CubismModel *model() const { return _model; }
 
+    Csm::csmInt32 textureCount() const {
+        return _setting == nullptr ? 0 : _setting->GetTextureCount();
+    }
+
+    const Csm::csmChar *textureName(Csm::csmInt32 index) const {
+        return _setting == nullptr ? nullptr : _setting->GetTextureFileName(index);
+    }
+
+    /// Exposes the renderer so the Objective-C layer can bind textures and draw
+    /// without any Cubism type appearing in the public header.
+    Csm::Rendering::CubismRenderer_Metal *metalRenderer() {
+        return GetRenderer<Csm::Rendering::CubismRenderer_Metal>();
+    }
+
+    /// The mask buffer is sized from the model canvas, so clipping masks match
+    /// the model's own resolution rather than the screen's.
+    /// The clipping-mask buffer is sized from the drawable, matching the SDK's own
+    /// Metal sample. Sizing it from the model canvas instead leaves masked parts
+    /// drawn as opaque quads over the model.
+    void createRenderer(Csm::csmUint32 width, Csm::csmUint32 height) {
+        CreateRenderer(width, height);
+    }
+
+    void setMvp(float scaleX, float scaleY, float translateY) {
+        Csm::CubismMatrix44 projection;
+        projection.Scale(scaleX, scaleY);
+        projection.TranslateY(translateY);
+        auto *renderer = metalRenderer();
+        if (renderer != nullptr) {
+            renderer->SetMvpMatrix(&projection);
+        }
+    }
+
     ~JoiModel() override {
         delete _setting;
         _setting = nullptr;
@@ -158,6 +195,13 @@ private:
 @implementation JoiLive2DModel {
     JoiModel *_model;
     BOOL _shutDown;
+    NSString *_directory;
+    NSMutableArray<id<MTLTexture>> *_textures;
+}
+
++ (void)configureRenderDevice:(id<MTLDevice>)device {
+    // Must precede model load: the renderer reads this when it is created.
+    Csm::Rendering::CubismRenderer_Metal::SetConstantSettings(device);
 }
 
 + (BOOL)startRuntime {
@@ -188,6 +232,8 @@ private:
         return nil;
     }
 
+    _directory = [directory copy];
+    _textures = [NSMutableArray array];
     _model = new JoiModel();
     if (!_model->load(directory.UTF8String, model3FileName.UTF8String)) {
         delete _model;
@@ -215,11 +261,70 @@ private:
     }
 }
 
+- (BOOL)prepareRendererWithDevice:(id<MTLDevice>)device
+                       maskWidth:(NSUInteger)maskWidth
+                      maskHeight:(NSUInteger)maskHeight {
+    if (_model == nullptr || _model->model() == nullptr || maskWidth == 0 || maskHeight == 0) {
+        return NO;
+    }
+    _model->createRenderer(static_cast<Csm::csmUint32>(maskWidth),
+                           static_cast<Csm::csmUint32>(maskHeight));
+    auto *renderer = _model->metalRenderer();
+    if (renderer == nullptr) {
+        return NO;
+    }
+
+    MTKTextureLoader *loader = [[MTKTextureLoader alloc] initWithDevice:device];
+    const Csm::csmInt32 count = _model->textureCount();
+    for (Csm::csmInt32 index = 0; index < count; ++index) {
+        const Csm::csmChar *name = _model->textureName(index);
+        if (name == nullptr || strlen(name) == 0) {
+            return NO;
+        }
+        NSString *path = [_directory stringByAppendingPathComponent:@(name)];
+        NSError *error = nil;
+        // Cubism's shaders sample textures as linear data, so sRGB conversion
+        // must be off or every model renders washed out.
+        id<MTLTexture> texture = [loader newTextureWithContentsOfURL:[NSURL fileURLWithPath:path]
+                                                            options:@{MTKTextureLoaderOptionSRGB: @NO}
+                                                              error:&error];
+        if (texture == nil) {
+            return NO;
+        }
+        [_textures addObject:texture];
+        renderer->BindTexture(static_cast<Csm::csmUint32>(index), texture);
+    }
+    // The SDK's own sample leaves this off unless PREMULTIPLIED_ALPHA_ENABLE is
+    // defined. Forcing it on renders masked regions as opaque blocks.
+    renderer->IsPremultipliedAlpha(false);
+    return _textures.count == static_cast<NSUInteger>(count) && count > 0;
+}
+
+- (void)drawWithCommandBuffer:(id<MTLCommandBuffer>)commandBuffer
+         renderPassDescriptor:(MTLRenderPassDescriptor *)renderPassDescriptor
+                     viewport:(MTLViewport)viewport
+                       scaleX:(float)scaleX
+                       scaleY:(float)scaleY
+                   translateY:(float)translateY {
+    if (_model == nullptr) {
+        return;
+    }
+    auto *renderer = _model->metalRenderer();
+    if (renderer == nullptr) {
+        return;
+    }
+    renderer->SetRenderViewport(viewport);
+    _model->setMvp(scaleX, scaleY, translateY);
+    renderer->StartFrame(commandBuffer, renderPassDescriptor);
+    renderer->DrawModel();
+}
+
 - (void)shutdown {
     if (_shutDown) {
         return;
     }
     _shutDown = YES;
+    [_textures removeAllObjects];
     delete _model;
     _model = nullptr;
 }
