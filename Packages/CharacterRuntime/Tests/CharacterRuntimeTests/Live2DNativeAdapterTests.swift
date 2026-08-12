@@ -176,8 +176,11 @@ final class Live2DNativeAdapterTests: XCTestCase {
         manifest: CharacterPackageManifestV1? = nil
     ) -> ValidatedCharacterPackageHandle {
         ValidatedCharacterPackageHandle(
-            installationID: "test-installation",
-            immutableRootID: "sha256:test-root",
+            installationID: CharacterInstallationID(rawValue: "test-installation"),
+            contentID: CharacterContentID(rawValue: "sha256:test-root"),
+            rootCapabilityID: UUID(),
+            validationGeneration: UUID(),
+            receiptDigest: "test-receipt",
             manifest: manifest ?? self.manifest(),
             receipt: CharacterPackageValidationReceiptV1(
                 manifestSHA256: "test-manifest-hash",

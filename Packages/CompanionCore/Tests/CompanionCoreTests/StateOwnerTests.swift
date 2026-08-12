@@ -14,6 +14,62 @@ final class StateOwnerTests: XCTestCase {
         XCTAssertEqual(after.acceptedEventIDs, ["event-1"])
     }
 
+    func testCharacterActivationIsCompareAndSwapAndPreservesSessionState() async {
+        let store = CompanionSessionStore(
+            characterID: "joi",
+            displayName: "Joi",
+            threadID: "thread-1",
+            sessionID: "session-1"
+        )
+        await store.accept(eventID: "event-1")
+        let expected = await store.current().selection
+        let imported = CharacterSelection(
+            characterID: "hiyori",
+            displayName: "桃瀬ひより",
+            installationID: CharacterInstallationID(rawValue: "installation-1"),
+            contentID: CharacterContentID(rawValue: "sha256:content-1")
+        )
+
+        let activated = await store.activate(selection: imported, expecting: expected)
+        let snapshot = await store.current()
+
+        XCTAssertTrue(activated)
+        XCTAssertEqual(snapshot.selection, imported)
+        XCTAssertEqual(snapshot.threadID, "thread-1")
+        XCTAssertEqual(snapshot.sessionID, "session-1")
+        XCTAssertEqual(snapshot.acceptedEventIDs, ["event-1"])
+    }
+
+    func testCharacterActivationRejectsStaleExpectedSelection() async {
+        let store = CompanionSessionStore(characterID: "joi", threadID: "thread-1", sessionID: "session-1")
+        let stale = CharacterSelection(characterID: "someone-else", displayName: "旧角色")
+        let imported = CharacterSelection(characterID: "hiyori", displayName: "桃瀬ひより")
+
+        let activated = await store.activate(selection: imported, expecting: stale)
+        let snapshot = await store.current()
+
+        XCTAssertFalse(activated)
+        XCTAssertEqual(snapshot.characterID, "joi")
+        XCTAssertEqual(snapshot.selection.displayName, "Joi")
+    }
+
+    func testCharacterActivationRejectsCancelledTaskBeforeCommit() async {
+        let store = CompanionSessionStore(characterID: "joi", threadID: "thread-1", sessionID: "session-1")
+        let expected = await store.current().selection
+        let imported = CharacterSelection(characterID: "hiyori", displayName: "桃瀬ひより")
+        let task = Task { () -> Bool in
+            while !Task.isCancelled { await Task.yield() }
+            return await store.activate(selection: imported, expecting: expected)
+        }
+
+        task.cancel()
+        let activated = await task.value
+        let snapshot = await store.current()
+
+        XCTAssertFalse(activated)
+        XCTAssertEqual(snapshot.selection, expected)
+    }
+
     func testJourneyStoreRejectsStaleNavigationSession() async {
         let store = JourneyContextStore()
         let active = NavigationSessionID()

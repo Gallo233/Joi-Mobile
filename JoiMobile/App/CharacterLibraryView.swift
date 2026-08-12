@@ -8,148 +8,78 @@ struct CharacterLibraryView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    Button {
-                        isImporterPresented = true
-                    } label: {
+                Section("本机导入") {
+                    Button { isImporterPresented = true } label: {
                         Label("选择本机角色文件", systemImage: "square.and.arrow.down")
-                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-
-                    Text("文件仅用于本机预览。预览不会切换当前角色、会话或记忆，也不会上传角色资产。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } header: {
-                    Text("本机导入")
+                    Text("支持 .joi-character、.vrm 与 Live2D ZIP。角色资产只在本机处理，不会上传。")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
-
-                previewSection
+                stateSection
+                installedSection
             }
             .navigationTitle("角色库")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("关闭") {
-                        model.dismissCharacterLibrary()
-                    }
-                }
-            }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { model.dismissCharacterLibrary() } } }
         }
-        .fileImporter(
-            isPresented: $isImporterPresented,
-            allowedContentTypes: allowedContentTypes,
-            allowsMultipleSelection: false
-        ) { result in
+        .task { await model.refreshInstalledCharacters() }
+        .fileImporter(isPresented: $isImporterPresented, allowedContentTypes: allowedContentTypes, allowsMultipleSelection: false) { result in
             switch result {
-            case let .success(urls):
-                guard let url = urls.first else { return }
-                Task {
-                    await model.previewCharacter(at: url)
-                }
-            case .failure:
-                model.characterPreviewState = .failed(
-                    message: String(localized: "未能打开所选文件，当前角色和会话未发生变化。")
-                )
+            case let .success(urls): if let url = urls.first { model.startPreview(at: url) }
+            case .failure: model.characterLibraryState = .failed(message: String(localized: "未能打开所选文件，当前角色和会话未发生变化。"))
             }
         }
     }
 
-    @ViewBuilder
-    private var previewSection: some View {
-        switch model.characterPreviewState {
-        case .idle:
-            Section("兼容性预览") {
-                ContentUnavailableView(
-                    "尚未选择角色",
-                    systemImage: "person.crop.square.dashed",
-                    description: Text("支持 .vrm、.model3.json 与 Live2D 文件夹预检；ZIP 完整安全导入留待 J1B。")
-                )
+    @ViewBuilder private var stateSection: some View {
+        switch model.characterLibraryState {
+        case .idle: EmptyView()
+        case let .previewing(name), let .installing(name):
+            Section("安全导入") { ProgressView(); Text(name).lineLimit(1); Button("取消") { model.cancelCharacterImport() } }
+        case let .preview(candidate):
+            Section("安全预览") {
+                LabeledContent("名称", value: candidate.receipt.manifest.displayName)
+                LabeledContent("格式", value: candidate.receipt.manifest.renderer.rawValue)
+                LabeledContent("来源", value: candidate.receipt.manifest.provenance.author)
+                LabeledContent("权利状态", value: candidate.receipt.manifest.provenance.license)
+                Text("兼容性和权利信息仅供核对，不代表原生运行时或发布权利已验证。").font(.footnote).foregroundStyle(.secondary)
+                Button("安装到本机") { model.startInstall() }
+                Button("取消", role: .cancel) { model.cancelCharacterImport() }
             }
-        case let .inspecting(fileName):
-            Section("兼容性预览") {
-                HStack(spacing: 12) {
-                    ProgressView()
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("正在检查角色元数据")
-                            .font(.headline)
-                        Text(fileName)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+        case let .installed(result):
+            if result.disposition == .quarantined {
+                Section("已安装，权利待确认") {
+                    Text("角色资产已安全保存到本机隔离区；确认权利前不能设为当前角色。")
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Section("已安装，尚未切换") {
+                    Text(model.fallbackLabel(for: result)).foregroundStyle(.secondary)
+                    Button("设为当前角色") { model.startActivation(result) }
+                }
+            }
+        case .activating: Section("切换角色") { ProgressView("正在安全切换角色") }
+        case .removing: Section("移除角色") { ProgressView("正在移除本机角色资产") }
+        case .cancelled: Section("导入已取消") { Text("当前角色、会话、记忆和行程未发生变化。"); Button("重新选择") { model.resetCharacterImport(); isImporterPresented = true } }
+        case let .failed(message): Section("无法导入或切换") { Label(message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange); Button("重新选择") { model.resetCharacterImport(); isImporterPresented = true } }
+        }
+    }
+
+    @ViewBuilder private var installedSection: some View {
+        Section("已安装角色") {
+            if model.installedCharacters.isEmpty { Text("尚无已安装角色").foregroundStyle(.secondary) }
+            ForEach(model.installedCharacters, id: \.installationID) { entry in
+                HStack { VStack(alignment: .leading) { Text(entry.displayName); Text(entry.renderer.rawValue).font(.caption).foregroundStyle(.secondary) }; Spacer()
+                    if entry.installationID == model.sessionSelection.installationID {
+                        Text("当前角色").font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        if !entry.activationAllowed { Text("权利待确认").font(.caption).foregroundStyle(.secondary) }
+                        Button("移除", role: .destructive) { model.startRemoval(entry) }
                     }
                 }
             }
-        case let .ready(preview):
-            compatibilitySections(preview)
-        case let .failed(message):
-            Section("无法预览") {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                Button("重新选择") {
-                    model.resetCharacterPreview()
-                    isImporterPresented = true
-                }
-            }
+            Text("移除只删除此设备上的角色资产，不会删除聊天、记忆或行程。").font(.footnote).foregroundStyle(.secondary)
         }
     }
 
-    @ViewBuilder
-    private func compatibilitySections(_ preview: CharacterCompatibilityPreview) -> some View {
-        Section("角色文件") {
-            LabeledContent("名称", value: preview.fileName)
-            LabeledContent("格式", value: preview.format)
-            if let inventory = preview.inventory {
-                LabeledContent("文件清单", value: inventory)
-            }
-            if let fingerprint = preview.fingerprint {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("内容指纹（SHA-256）")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(fingerprint)
-                        .font(.caption.monospaced())
-                        .textSelection(.enabled)
-                }
-            }
-        }
-
-        Section("已检测能力") {
-            if preview.availableCapabilities.isEmpty {
-                Text("尚无已验证能力")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(preview.availableCapabilities, id: \.self) { capability in
-                    Label(capability, systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                }
-            }
-        }
-
-        Section("未声明或尚未检测") {
-            ForEach(preview.unavailableCapabilities, id: \.self) { capability in
-                Label(capability, systemImage: "questionmark.circle")
-                    .foregroundStyle(.secondary)
-            }
-        }
-
-        Section("加载边界") {
-            LabeledContent("回退方式", value: preview.fallback)
-            Text("这里只显示元数据兼容性，不代表原生 Live2D、RealityKit 或 Metal 已加载成功。")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-        }
-
-        Section("来源与权利") {
-            LabeledContent("来源", value: preview.source)
-            LabeledContent("权利状态", value: preview.rights)
-        }
-    }
-
-    private var allowedContentTypes: [UTType] {
-        [
-            UTType(filenameExtension: "vrm") ?? .data,
-            .json,
-            .zip,
-            .folder,
-        ]
-    }
+    private var allowedContentTypes: [UTType] { [UTType(filenameExtension: "joi-character") ?? .archive, UTType(filenameExtension: "vrm") ?? .data, .zip] }
 }

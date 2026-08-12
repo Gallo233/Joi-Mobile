@@ -1,3 +1,4 @@
+import json
 import subprocess
 import unittest
 from pathlib import Path
@@ -65,14 +66,59 @@ class PrivateCharacterFixturePolicyTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, specification)
 
-    def test_character_runtime_keeps_vendor_runtimes_out_of_dependency_graph(self) -> None:
+    def test_character_runtime_dependency_graph_allows_only_pinned_zip_container(self) -> None:
         manifest = (ROOT / "Packages/CharacterRuntime/Package.swift").read_text(
             encoding="utf-8"
         )
-        self.assertNotIn(".package(url:", manifest)
+        self.assertEqual(manifest.count(".package(url:"), 1)
+        self.assertIn(
+            '.package(url: "https://github.com/weichsel/ZIPFoundation.git", exact: "0.9.20")',
+            manifest,
+        )
         self.assertNotIn("resources:", manifest)
         self.assertNotIn("Cubism", manifest)
         self.assertNotIn("VRMKit", manifest)
+
+        resolved = json.loads(
+            (ROOT / "Packages/CharacterRuntime/Package.resolved").read_text(encoding="utf-8")
+        )
+        self.assertEqual(len(resolved["pins"]), 1)
+        pin = resolved["pins"][0]
+        self.assertEqual(pin["identity"], "zipfoundation")
+        self.assertEqual(pin["state"]["version"], "0.9.20")
+        self.assertEqual(
+            pin["state"]["revision"],
+            "22787ffb59de99e5dc1fbfe80b19c97a904ad48d",
+        )
+
+        notices = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
+        self.assertIn("ZIPFoundation", notices)
+        self.assertIn("MIT", notices)
+
+    def test_character_runtime_never_uses_high_level_zip_path_extraction(self) -> None:
+        sources = ROOT / "Packages/CharacterRuntime/Sources/CharacterRuntime"
+        violations: list[str] = []
+        for path in sources.rglob("*.swift"):
+            text = path.read_text(encoding="utf-8")
+            if "unzipItem(" in text:
+                violations.append(str(path.relative_to(ROOT)))
+        self.assertEqual(violations, [])
+
+    def test_chinese_character_library_copy_remains_in_editable_catalog(self) -> None:
+        catalog = json.loads(
+            (ROOT / "JoiMobile/Resources/Localizable.xcstrings").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(catalog["sourceLanguage"], "zh-Hans")
+        keys = catalog["strings"]
+        for expected in (
+            "安装到本机",
+            "设为当前角色",
+            "移除只删除此设备上的角色资产，不会删除聊天、记忆或行程。",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, keys)
 
 
 if __name__ == "__main__":

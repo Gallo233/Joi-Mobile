@@ -70,6 +70,39 @@ class ContractArtifactTests(unittest.TestCase):
         )
         self.assertGreaterEqual(len(errors), 2)
 
+    def test_character_manifest_rejects_unsafe_paths_unknown_fields_and_noncanonical_hashes(self) -> None:
+        schema = json.loads(
+            (CONTRACTS / "character-package-manifest-v1.schema.json").read_text(encoding="utf-8")
+        )
+        fixture = json.loads(
+            (CONTRACTS / "fixtures/character-package.valid.json").read_text(encoding="utf-8")
+        )
+        validator = Draft202012Validator(schema, format_checker=FormatChecker())
+
+        unsafe_path = deepcopy(fixture)
+        unsafe_path["entryPath"] = "../portrait.png"
+        self.assertTrue(list(validator.iter_errors(unsafe_path)))
+
+        windows_path = deepcopy(fixture)
+        windows_path["assets"][0]["path"] = "assets\\portrait.png"
+        self.assertTrue(list(validator.iter_errors(windows_path)))
+
+        uppercase_hash = deepcopy(fixture)
+        uppercase_hash["assets"][0]["sha256"] = "A" * 64
+        self.assertTrue(list(validator.iter_errors(uppercase_hash)))
+
+        unknown_field = deepcopy(fixture)
+        unknown_field["memory"] = {"imported": True}
+        self.assertTrue(list(validator.iter_errors(unknown_field)))
+
+        local_source = deepcopy(fixture)
+        local_source["provenance"]["source"] = "file:///Users/test/private/avatar.vrm"
+        self.assertTrue(list(validator.iter_errors(local_source)))
+
+        absolute_source = deepcopy(fixture)
+        absolute_source["provenance"]["source"] = "/private/avatar.vrm"
+        self.assertTrue(list(validator.iter_errors(absolute_source)))
+
 
 if __name__ == "__main__":
     unittest.main()

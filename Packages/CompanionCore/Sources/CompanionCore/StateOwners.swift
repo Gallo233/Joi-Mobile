@@ -1,18 +1,28 @@
 import Foundation
 
 public struct CompanionSessionSnapshot: Codable, Equatable, Sendable {
-    public let characterID: String
+    public let selection: CharacterSelection
     public let threadID: String
     public let sessionID: String
     public let acceptedEventIDs: [String]
+
+    public var characterID: String { selection.characterID }
 }
 
 public actor CompanionSessionStore {
     private var snapshot: CompanionSessionSnapshot
 
-    public init(characterID: String, threadID: String, sessionID: String) {
+    public init(
+        characterID: String,
+        displayName: String = "Joi",
+        threadID: String,
+        sessionID: String
+    ) {
         snapshot = CompanionSessionSnapshot(
-            characterID: characterID,
+            selection: CharacterSelection(
+                characterID: characterID,
+                displayName: displayName
+            ),
             threadID: threadID,
             sessionID: sessionID,
             acceptedEventIDs: []
@@ -23,10 +33,26 @@ public actor CompanionSessionStore {
         snapshot
     }
 
+    @discardableResult
+    public func activate(
+        selection: CharacterSelection,
+        expecting expected: CharacterSelection
+    ) -> Bool {
+        guard !Task.isCancelled else { return false }
+        guard snapshot.selection == expected else { return false }
+        snapshot = CompanionSessionSnapshot(
+            selection: selection,
+            threadID: snapshot.threadID,
+            sessionID: snapshot.sessionID,
+            acceptedEventIDs: snapshot.acceptedEventIDs
+        )
+        return true
+    }
+
     public func accept(eventID: String) {
         guard !snapshot.acceptedEventIDs.contains(eventID) else { return }
         snapshot = CompanionSessionSnapshot(
-            characterID: snapshot.characterID,
+            selection: snapshot.selection,
             threadID: snapshot.threadID,
             sessionID: snapshot.sessionID,
             acceptedEventIDs: snapshot.acceptedEventIDs + [eventID]

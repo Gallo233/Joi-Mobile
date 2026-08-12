@@ -212,8 +212,11 @@ final class VRMNativeAdapterTests: XCTestCase {
 
     private func package(portrait: String?) -> ValidatedCharacterPackageHandle {
         ValidatedCharacterPackageHandle(
-            installationID: "test-installation",
-            immutableRootID: "test-root",
+            installationID: CharacterInstallationID(rawValue: "test-installation"),
+            contentID: CharacterContentID(rawValue: "sha256:test-root"),
+            rootCapabilityID: UUID(),
+            validationGeneration: UUID(),
+            receiptDigest: "test-receipt",
             manifest: CharacterPackageManifestV1(
                 packageID: "test.vrm",
                 characterID: "joi",

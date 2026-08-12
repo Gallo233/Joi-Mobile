@@ -3,6 +3,7 @@ import Foundation
 
 public enum CharacterPackageLimits {
     public static let maximumArchiveBytes = 128 * 1_024 * 1_024
+    public static let maximumFileBytes = 128 * 1_024 * 1_024
     public static let maximumExpandedBytes = 512 * 1_024 * 1_024
     public static let maximumFileCount = 2_000
     public static let maximumExpansionRatio = 20

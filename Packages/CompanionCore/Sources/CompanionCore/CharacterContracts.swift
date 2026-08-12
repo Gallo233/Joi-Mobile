@@ -1,5 +1,40 @@
 import Foundation
 
+public struct CharacterInstallationID: RawRepresentable, Codable, Equatable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+}
+
+public struct CharacterContentID: RawRepresentable, Codable, Equatable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+}
+
+public struct CharacterSelection: Codable, Equatable, Sendable {
+    public let characterID: String
+    public let displayName: String
+    public let installationID: CharacterInstallationID?
+    public let contentID: CharacterContentID?
+
+    public init(
+        characterID: String,
+        displayName: String,
+        installationID: CharacterInstallationID? = nil,
+        contentID: CharacterContentID? = nil
+    ) {
+        self.characterID = characterID
+        self.displayName = displayName
+        self.installationID = installationID
+        self.contentID = contentID
+    }
+}
+
 public enum CharacterRendererKind: String, Codable, Sendable, CaseIterable {
     case `static`
     case live2d
@@ -85,20 +120,29 @@ public struct CharacterPackageValidationReceiptV1: Codable, Equatable, Sendable 
 }
 
 public struct ValidatedCharacterPackageHandle: Equatable, Sendable {
-    public let installationID: String
-    public let immutableRootID: String
+    public let installationID: CharacterInstallationID
+    public let contentID: CharacterContentID
+    public let rootCapabilityID: UUID
+    public let validationGeneration: UUID
+    public let receiptDigest: String
     public let manifest: CharacterPackageManifestV1
     public let receipt: CharacterPackageValidationReceiptV1
 
     @_spi(CharacterPackageInstaller)
     public init(
-        installationID: String,
-        immutableRootID: String,
+        installationID: CharacterInstallationID,
+        contentID: CharacterContentID,
+        rootCapabilityID: UUID,
+        validationGeneration: UUID,
+        receiptDigest: String,
         manifest: CharacterPackageManifestV1,
         receipt: CharacterPackageValidationReceiptV1
     ) {
         self.installationID = installationID
-        self.immutableRootID = immutableRootID
+        self.contentID = contentID
+        self.rootCapabilityID = rootCapabilityID
+        self.validationGeneration = validationGeneration
+        self.receiptDigest = receiptDigest
         self.manifest = manifest
         self.receipt = receipt
     }

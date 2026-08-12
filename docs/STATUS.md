@@ -1,10 +1,12 @@
 # Joi Mobile Status
 
-Last updated: 2026-08-11
+Last updated: 2026-08-12
 
 ## Current phase
 
-G1 deterministic foundation is published to the private GitHub repository `Gallo233/Joi-Mobile`. The bounded `G2-J1A` Chinese private-fixture preflight and compatibility-preview slice is complete with conditions. No deployment, cloud resource, vendor contact, license application or App Store submission has been made.
+G1 deterministic foundation and the bounded `G2-J1A` preview slice are published to the private GitHub repository `Gallo233/Joi-Mobile`. The local `G2-J1B` import/install/activation/removal implementation has closed its first Closeout rework and is a Director re-review candidate on branch `codex/j1b-character-installer`. No deployment, cloud resource, vendor contact, license application, App Store submission or J1B remote push has been made.
+
+On 2026-08-12 the J1B candidate was independently re-verified on this workstation before hand-off acceptance. One recorded evidence row did not reproduce: the CharacterRuntime suite failed on activation-lease revocation. The defect is fixed, the previously uncovered pre-CAS path now has a test, and every lane was re-run and re-recorded below. Superseded rows are kept rather than deleted so the evidence history stays auditable.
 
 ## Studio brief
 
@@ -23,6 +25,14 @@ G1 deterministic foundation is published to the private GitHub repository `Gallo
 - Ownership: Character Runtime owned admission and package tests; iOS Platform/Product owned App preview and String Catalog; Technical alone owned the handle SPI; Studio integrator owned TDD/STATUS and repository policy.
 - Frozen boundary: existing renderer and state-owner contracts remain; `ValidatedCharacterPackageHandle` construction is restricted to the installer SPI. No external runtime dependency or vendor asset is admitted.
 - Deferred by design: full ZIP/raw wrapping, immutable install/activation/removal and malicious archive corpus are J1B; native rendering/device work is G4; rights and licenses are G5.
+
+### G2-J1B Studio brief
+
+- Outcome: local `.joi-character`, raw VRM and Live2D ZIP preview → explicit install → optional activation → verified removal, while rights-unknown content remains quarantined.
+- Crew: Studio Director; Product, Technical, AI & Companion, Art & Character, Content & Trust, Trust & Safety and Quality Directors; Character Runtime and iOS Platform implementers; independent Closeout reviewer.
+- Ownership: Character Runtime alone owns staging, ZIP policy, adapters, immutable storage, activation leases and deletion recovery; App owns UI orchestration; `CompanionSessionStore` remains the sole active-selection writer.
+- Frozen boundaries: exact ZIPFoundation pin only; no Cubism/VRM native runtime admission; private fixtures are process-only inputs; no asset path/payload in Git, product logs or bundle.
+- Deferred by design: native animation/fidelity/performance are G4; retained redistribution/license receipts are G5; sync/export/update/signatures, extra languages and full accessibility remain later work.
 
 ## Scheme gates
 
@@ -74,6 +84,25 @@ G0 is closed with no `Rework` or `Blocked` decision. Public contract implementat
 | 2026-08-11 | Generic iOS Simulator build | Pass | G2-J1A App and all local packages compile with Xcode 26.6 / Swift 6 |
 | 2026-08-11 | iPhone 17e, iOS 26.5 simulator test | Pass, 3 tests, 0 skips | Chat/Map continuity plus successful/failed character preview preserve character, thread, session and journey state |
 | 2026-08-11 | Private-asset policy, history/secret scan and generated App bundle audit | Pass | No tracked/history/App-bundled `.vrm`, `.vrma`, `.moc3` payload, local absolute production path, Cubism runtime, VRMKit runtime or provider credential |
+| 2026-08-11 | J1B CharacterRuntime public suite | **Superseded — did not reproduce.** Recorded as 59 tests with 55 passes and 4 skips; independent re-verification measured 54 passes, 4 skips and 1 failure | See the 2026-08-12 rows: `testPostInstallMutationMakesCatalogUnavailableAndInvalidatesHandle` failed because detected mutation did not revoke outstanding activation leases |
+| 2026-08-11 | J1B full private CharacterRuntime lane | **Superseded — not re-confirmed at the recorded count** | Fingerprints and admission paths reproduce; the installer lease defect above was present in the same tree |
+| 2026-08-11 | J1B installer lane under Address Sanitizer | Pass, 32 tests with 2 expected private skips | Deterministic parser/import/removal corpus; this is not coverage-guided fuzzing or device evidence |
+| 2026-08-11 | J1B exact dependency and notice policy | Pass | ZIPFoundation `0.9.20`, revision `22787ffb59de99e5dc1fbfe80b19c97a904ad48d`, MIT notice, no high-level `unzipItem` |
+| 2026-08-11 | Current Desktop Joi normalized-shape synthetic fixture | Pass | Explicit legacy discriminator and `zh→zh-Hans`; receipt retains bounded attribution/update fields while dropping capabilities, weights, memory namespace and local filename |
+| 2026-08-11 | J1B iPhone 17 Pro, iOS 26.5 simulator test | Pass, 9 tests, 0 skips | Preview/install/static activation, lease veto/release, fresh-store removal decision, cancellation cleanup, Chat/Map/session/journey continuity |
+| 2026-08-11 | J1B generic iOS Simulator build | Pass | App, exact ZIP dependency and all local packages compile with Xcode 26.6 / Swift 6 |
+| 2026-08-11 | Two consecutive J1B XcodeGen generations | Pass, identical SHA-256 `c575ab6e6c2e73a177fbb50043582ba19397c4c18344598070baa88f0a1e36e2` | Generated project includes the current Desktop compatibility fixture and final J1B sources |
+| 2026-08-11 | J1B six-package regression | **Superseded — did not reproduce**; recorded as 83 tests passing | The CharacterRuntime 59 component contained the failing lease test; see the 2026-08-12 84-test row |
+| 2026-08-11 | Backend and repository Python suites | Pass, 19 tests | Mock backend, Draft 2020-12 contracts, HTTPS-only provenance, dependency/private-payload policy and editable Chinese catalog |
+| 2026-08-11 | J1B limits and recovery evidence | Pass | Real sparse archive 128 MiB exact/+1; production policy helper exact/+1 for 128 MiB file, 512 MiB expanded, 2,000 files and 20:1; pre/post-commit cancellation, four deletion fault phases and startup recovery |
+| 2026-08-12 | Independent re-verification of the J1B candidate before hand-off acceptance | **Fail on first run, 1 failure in 59 tests** | `prepareActivation` marked a mutated installation unavailable but left every previously issued activation lease registered, so a detected-mutated handle stayed registered and `remove` would answer `inUse` forever. Fixed by revoking all leases for the installation on any failed tree revalidation, in both `prepareActivation` and pre-CAS `validateActivation` |
+| 2026-08-12 | J1B CharacterRuntime public suite after the lease-revocation fix | Pass, 60 tests: 56 pass and 4 expected opt-in skips | Adds `testMutationDetectedAtPreCASValidationRevokesEveryLeaseAndAllowsRemoval`, which had no coverage before and asserts revocation plus recovered deletability |
+| 2026-08-12 | J1B full private CharacterRuntime lane after the fix | Pass, 60 tests, 0 failures, 0 skips | Explicitly supplied 桃瀬ひより tree `6cba59…175c8` / 17 files and `AvatarSample_A` `2a0ccd…827f5`; payloads remain outside the repository |
+| 2026-08-12 | J1B installer lane under Address Sanitizer after the fix | Pass, 33 tests with 2 expected private skips | Same deterministic corpus; still not coverage-guided fuzzing or device evidence |
+| 2026-08-12 | J1B six-package regression after the fix | Pass, 84 tests in the private 0-skip lane | CompanionCore 12, CharacterRuntime 60, ChatFeature 3, MapFeature 1, OfflinePack 7, SyncClient 1 |
+| 2026-08-12 | J1B generic iOS Simulator build and iPhone 17 Pro, iOS 26.5 test after the fix | Pass; build succeeded and 9 tests, 0 skips | Preview/install/static activation, lease veto/release, fresh-store removal decision, cancellation cleanup and Chat/Map/session/journey continuity |
+| 2026-08-12 | Two consecutive XcodeGen generations after the fix | Pass, identical SHA-256 `c575ab6e6c2e73a177fbb50043582ba19397c4c18344598070baa88f0a1e36e2` | Matches the recorded J1B hash; the fix touches sources already in the generated targets |
+| 2026-08-12 | Backend and repository Python suites and PRD/TDD traceability after the fix | Pass, 19 tests and 24 traced P0 requirements | `unittest` lanes, not `pytest`: the pinned `Backend/.venv` has `jsonschema` only |
 
 The visible Chat composer, push-to-talk button, character runtime surface, Map card, navigation, source button and profile control are **placeholders**. The first slice proves composition/state/contracts and PoC seams; it does not provide complete Chat, Map, account, sync or production-backend journeys.
 
@@ -127,4 +156,26 @@ G1 first-slice Closeout is approved with conditions and has no remaining `Rework
 | Trust & Safety | Approved with conditions | Preview is non-destructive and assets/paths stay out of production; isolated installer and malicious archive corpus remain J1B. |
 | Quality & Release | Approved with conditions | Public/private tests, simulator build and bundle audit passed; device and rights gates remain open. |
 
+### G2-J1B Scheme decisions
+
+| Director | Decision | Conditions / owner |
+|---|---|---|
+| Product Design | Approved with conditions | Chinese choose/preview/install/activate/remove flow; quarantine has no activation action. Additional languages and full accessibility remain deferred. |
+| Technical | Approved with conditions | Exact manifest discriminator, streaming ZIP policy, installer lease and session CAS frozen; native renderer contracts remain G4. |
+| AI & Companion | Approved with conditions | Package work cannot write memory/journey/permissions; successful CAS preserves thread/session/events. Production speech cancellation remains later integration. |
+| Art & Character | Approved with conditions | Private fixtures are import/metadata evidence only; no native claim. Rights-cleared device fixtures remain G4/G5. |
+| Content & Trust | Approved with conditions | Editable `zh-Hans` recovery/rights copy and HTTPS-only authored source; rights confirmation workflow remains G5. |
+| Trust & Safety | Approved with conditions | No-follow staging, strict graph/content policy, quarantine, activation lease and journaled removal are mandatory; veto retained. |
+| Quality & Release | Approved with conditions | Exact dependency/notice, deterministic corpus, fault recovery, private 0-skip lane, simulator and bundle evidence required; G4/G5/G6 remain open. |
+
 Independent Closeout found no `Rework` or `Blocked` decision for this bounded slice. `G2-J1A` is closed with conditions. This does not close complete G2, `JM-P0-015`, `JM-P0-017`, G4 or G5.
+
+### G2-J1B Closeout rework closure candidate
+
+The first independent J1B Closeout returned Technical, Trust & Safety and Quality `Rework`: App-authorized active removal was bypassable, the handle tuple was not enforced, removal could overstate physical deletion, Desktop compatibility used an invented reduced shape, ZIP preflight/material hashes loaded large files, canonical JSON could carry forbidden state, and required fault/boundary/deflate/fuzz evidence was missing.
+
+The candidate now closes those findings with installer-owned activation leases; pre-CAS revalidation and exact release; fresh `CompanionSessionStore` decisions; journaled, retryable, verified deletion; current Desktop normalized-shape adaptation; bounded `pread` ZIP metadata; incremental file hashing; renderer-graph content closure; HTTPS-only authored provenance; recursive JSON state/secret rejection; valid deflate, deterministic mutation, exact/+1 policy, crash/retry and App cancellation tests. The independent Director re-review is still required before this section may state that `G2-J1B` is closed.
+
+The 2026-08-12 hand-off re-verification found the lease part of that closure incomplete. Revalidation correctly detected a mutated asset tree and marked the catalog entry unavailable, but it revoked no activation lease, so a handle whose content was already proven mutated stayed installer-registered and `remove` would answer `inUse` with no reachable release path — a permanently undeletable compromised installation, against DEC-013 and DEC-014. Any failed tree revalidation now revokes every lease for that installation, in `prepareActivation` and in pre-CAS `validateActivation`; a handle that is merely stale, rather than backed by a mutated tree, still revokes only itself. Because the App-side pre-CAS path had no test, one was added. This is a correctness repair inside an already-declared contract, not a new capability, so it does not narrow the remaining re-review: Technical still owns confirming lease and CAS behavior end to end.
+
+Open conditions are unchanged: native Cubism/RealityKit/Metal rendering and device performance remain G4; private model/Live2D redistribution and dependency/data rights remain G5; release/privacy/signing remain G6. Additional languages and full accessibility validation remain explicitly deferred.
