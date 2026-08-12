@@ -158,3 +158,20 @@
 - **Why a root is handed out at all:** the earlier intent was that asset roots are never exposed. A renderer has to read real files, so that intent was unachievable as written. What the boundary actually buys is preserved: the value cannot be constructed by a consumer, it is refused for a stale, removed, mutated or quarantined installation, and the entry file comes from the verified manifest rather than a caller's guess.
 - **Consequence found while wiring this:** a bare Live2D `.zip` or raw `.vrm` installs but stays quarantined with `rightsUnverified`, so it can never be activated and therefore never rendered. The render link is reachable only for a rights-cleared canonical package. That is the J1B rule working as designed, not a defect, and it means "import a loose model and see it on stage" is blocked on the G5 rights-confirmation workflow rather than on renderer code.
 - **Development consequence:** until that workflow exists, the native stage falls back to an explicitly supplied local fixture, which is a development affordance and is not a product path.
+
+## DEC-021 — The spoken language is separate from the displayed language
+
+- **Status:** Accepted
+- **Date:** 2026-08-12
+- **Decision:** Joi Mobile displays Simplified Chinese and speaks Japanese with the character's own voice. `CompanionEventV1` already separated `displayText` from `voiceLine`, so the Chinese reply travels in `displayText` and the Japanese spoken line in `voiceLine`. The proxy asks the model for both halves in one turn, separated by a delimiter, rather than making a second translation call: one round trip keeps the two consistent and the audio close behind the text. Drafts stream only the displayed half, so the spoken line never appears as visible text.
+- **Silence rule, carried from desktop Joi:** `fallback_to_system: false`. If speech synthesis or playback fails, the turn stays silent and keeps its text. No system voice, and no other voice, may speak as the character. A model that ignores the output format yields no `voiceLine`, which is silence rather than Chinese text read by a Japanese voice.
+- **Lip sync is audio-only:** mouth opening is computed from the amplitude of the audio actually playing, so silence closes the mouth with no separate bookkeeping. Driving a mouth from text timing would animate speech that is not being spoken; this product stays still instead of miming.
+- **Reason:** The character's voice is part of its identity, and the audience reads Chinese. Treating display and voice as one string would have forced a choice between the two.
+
+## DEC-022 — Voice identity is read from the character package, never copied
+
+- **Status:** Accepted
+- **Date:** 2026-08-12
+- **Decision:** The proxy loads the voice at run time from a character package manifest named by `JOI_VOICE_PROFILE`, reading `localizations.<lang>.voice`: a per-emotion map of reference clip, transcript and speed. Nothing about the voice is committed to this repository.
+- **Pairing rule:** a reference clip and its transcript always travel together, and `VoiceTake` has no way to hold one without the other. A clip described by the wrong text degrades the voice rather than colouring it, so an entry missing either half is skipped instead of paired with a mismatched transcript.
+- **Reason:** The clips, their transcripts and their absolute paths are private data, and desktop Joi already owns them. Reading that manifest directly keeps one source of truth that cannot drift, instead of a second copy in this repository that would.

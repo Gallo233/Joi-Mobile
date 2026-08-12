@@ -58,14 +58,23 @@ struct Live2DDevFixture {
 struct Live2DStageSurface: UIViewRepresentable {
     let fixture: Live2DDevFixture
     let framing: StageFraming
+    /// Polled each frame for mouth opening. Nil means the mouth stays closed.
+    weak var amplitude: SpeechPlayer?
     let onUnavailable: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(fixture: fixture, onUnavailable: onUnavailable)
+        Coordinator(fixture: fixture, amplitude: amplitude, onUnavailable: onUnavailable)
     }
 
     func makeUIView(context: Context) -> MTKView {
         let view = MTKView()
+        // Touch drives look-at and the model's own gesture motions.
+        view.addGestureRecognizer(
+            UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
+        )
+        view.addGestureRecognizer(
+            UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        )
         view.device = MTLCreateSystemDefaultDevice()
         view.isOpaque = false
         view.backgroundColor = .clear
@@ -101,10 +110,64 @@ struct Live2DStageSurface: UIViewRepresentable {
         private var reportedUnavailable = false
         private var rendererPrepared = false
 
-        init(fixture: Live2DDevFixture, onUnavailable: @escaping () -> Void) {
+        private weak var amplitude: SpeechPlayer?
+
+        init(
+            fixture: Live2DDevFixture,
+            amplitude: SpeechPlayer?,
+            onUnavailable: @escaping () -> Void
+        ) {
             self.fixture = fixture
+            self.amplitude = amplitude
             self.onUnavailable = onUnavailable
             super.init()
+        }
+
+        /// Look-at follows the finger while it is down and recentres on release,
+        /// so the character does not stare at wherever the last touch ended.
+        @objc func handlePan(_ recognizer: UIPanGestureRecognizer) {
+            guard let view = recognizer.view else { return }
+            switch recognizer.state {
+            case .began, .changed:
+                let point = recognizer.location(in: view)
+                let (x, y) = Self.modelPoint(point, in: view.bounds.size)
+                model?.setLookTargetX(x, y: y)
+            case .ended, .cancelled, .failed:
+                model?.setLookTargetX(0, y: 0)
+                // A flick is a gesture the model may declare a motion for.
+                let velocity = recognizer.velocity(in: view)
+                if abs(velocity.y) > 900, abs(velocity.y) > abs(velocity.x) {
+                    _ = model?.startMotion(inGroup: velocity.y < 0 ? "FlickUp" : "FlickDown", index: 0)
+                } else if abs(velocity.x) > 900 {
+                    _ = model?.startMotion(inGroup: "Flick", index: 0)
+                }
+            default:
+                break
+            }
+        }
+
+        /// A tap inside a declared hit area plays that area's motion; elsewhere it
+        /// plays the general tap motion. A model that declares neither simply does
+        /// nothing, which is why the return value is checked.
+        @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
+            guard let model, let view = recognizer.view else { return }
+            let (x, y) = Self.modelPoint(recognizer.location(in: view), in: view.bounds.size)
+            if model.hitTestArea("Body", atX: x, y: y) {
+                if model.startMotion(inGroup: "Tap@Body", index: 0) { return }
+            }
+            _ = model.startMotion(inGroup: "Tap", index: 0)
+        }
+
+        /// Converts a view point into the model's own -1...1 space, undoing the
+        /// same scale the draw pass applies so a tap lands where it looks.
+        private static func modelPoint(_ point: CGPoint, in size: CGSize) -> (Float, Float) {
+            guard size.width > 0, size.height > 0 else { return (0, 0) }
+            let clipX = Float(point.x / size.width) * 2 - 1
+            // View y grows downward; model y grows upward.
+            let clipY = 1 - Float(point.y / size.height) * 2
+            let zoom = StageFraming.fullBody.modelZoom
+            let scaleX = zoom * Float(size.height / size.width)
+            return (clipX / max(scaleX, 0.0001), clipY / max(zoom, 0.0001))
         }
 
         func attach(to view: MTKView) {
@@ -172,6 +235,9 @@ struct Live2DStageSurface: UIViewRepresentable {
             let now = CACurrentMediaTime()
             let delta = lastFrame.map { min(now - $0, 0.1) } ?? 0
             lastFrame = now
+            // Mouth opening comes from the audio actually playing, so silence
+            // closes it without any separate bookkeeping.
+            model.setLipSyncValue(amplitude?.currentAmplitude ?? 0)
             model.update(withDelta: delta)
 
             let width = Float(view.drawableSize.width)

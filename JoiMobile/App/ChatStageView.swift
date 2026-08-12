@@ -15,6 +15,7 @@ struct ChatStageView: View {
             CharacterStageView(
                 framing: model.stageFraming,
                 isResponding: model.chatTurnState.isPending,
+                speechPlayer: model.speechPlayer,
                 stageContent: model.stageContent
             )
             .ignoresSafeArea()

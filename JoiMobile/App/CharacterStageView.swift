@@ -49,6 +49,8 @@ enum StageFraming: String, CaseIterable, Sendable {
 struct CharacterStageView: View {
     let framing: StageFraming
     let isResponding: Bool
+    /// Polled by a native renderer for mouth opening.
+    var speechPlayer: SpeechPlayer?
     /// The activated character's content, when one is active. This is the product
     /// path; a developer fixture is only consulted when nothing is activated.
     var stageContent: CharacterContentAccess?
@@ -91,6 +93,7 @@ struct CharacterStageView: View {
             Live2DStageSurface(
                 fixture: live2d,
                 framing: framing,
+                amplitude: speechPlayer,
                 onUnavailable: { nativeUnavailable = true }
             )
             // Keyed by content so activating a different character rebuilds the

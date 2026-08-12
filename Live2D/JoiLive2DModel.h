@@ -48,6 +48,22 @@ NS_ASSUME_NONNULL_BEGIN
 /// Advances motion, physics and breath by `seconds`.
 - (void)updateWithDelta:(NSTimeInterval)seconds;
 
+/// Sets the mouth opening for this frame, 0...1, from real audio amplitude.
+/// Passing 0 closes the mouth, which is what silence must look like.
+- (void)setLipSyncValue:(float)value;
+
+/// Points the head and eyes at a normalised target, each axis -1...1, where
+/// (0, 0) is straight ahead. Values are clamped.
+- (void)setLookTargetX:(float)x y:(float)y;
+
+/// Starts a motion from a declared group. Returns NO when the model has no such
+/// group, so a caller cannot silently believe a gesture played.
+- (BOOL)startMotionInGroup:(NSString *)group index:(NSInteger)index;
+
+/// Whether the model declares this hit area, and whether a normalised point
+/// (-1...1 in model space) falls inside it.
+- (BOOL)hitTestArea:(NSString *)area atX:(float)x y:(float)y;
+
 /// Creates the Metal renderer and uploads the model's textures. Returns NO when
 /// any texture is missing, so the caller can fall back rather than draw a
 /// partially textured model.

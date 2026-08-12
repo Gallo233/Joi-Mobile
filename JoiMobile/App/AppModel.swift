@@ -80,6 +80,9 @@ final class AppModel {
     let journeyContext = JourneyContextStore()
     let speechCoordinator = SpeechCoordinator()
 
+    /// Plays the character's spoken line and exposes its amplitude for lip sync.
+    let speechPlayer: SpeechPlayer
+
     private let installer: CharacterPackageInstaller
     private let renderer: any CharacterRenderer
     private let chatController: ChatSessionController
@@ -108,8 +111,12 @@ final class AppModel {
         // The default endpoint is the local contract mock in `Backend/`. A public
         // build must inject the official HTTPS proxy; `ChatBackendEndpoint`
         // refuses any non-loopback plain-HTTP host.
+        let endpoint = ChatBackendEndpoint.localMock()
         self.chatController = ChatSessionController(
-            gateway: chatGateway ?? SSEChatGateway(endpoint: .localMock())
+            gateway: chatGateway ?? SSEChatGateway(endpoint: endpoint)
+        )
+        self.speechPlayer = SpeechPlayer(
+            endpoint: endpoint.baseURL.appendingPathComponent("v1/speech")
         )
         self.sessionSelection = initialSelection
         self.companionSession = CompanionSessionStore(
@@ -162,6 +169,9 @@ final class AppModel {
     /// User-initiated stop. A late terminal event cannot append text afterwards
     /// because acceptance is keyed to the request that is still current.
     func stopChatTurn() {
+        // Stopping the turn stops the voice: speech is part of the response, not
+        // an independent thing that outlives it.
+        speechPlayer.stop()
         guard let requestID = chatRequestID else { return }
         chatTask?.cancel()
         chatTask = nil
@@ -236,6 +246,13 @@ final class AppModel {
             case let .append(entry):
                 if await companionSession.appendAccepted(entry, threadID: threadID) {
                     chatTranscript.append(entry)
+                    // Speech follows acceptance, never a draft: a line that was
+                    // superseded or cancelled must never be spoken. The spoken
+                    // language differs from the displayed text, so only an
+                    // explicit `voiceLine` is ever sent to the voice.
+                    if entry.author == .companion, let line = event.voiceLine {
+                        speechPlayer.speak(line)
+                    }
                 }
                 latestPhase = event.phase
             case let .status(phase):

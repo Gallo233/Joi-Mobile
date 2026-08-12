@@ -126,7 +126,51 @@ public:
         }
         _model->SaveParameters();
         _updateScheduler.OnLateUpdate(_model, seconds);
+        applyLookAndLipSync();
         _model->Update();
+    }
+
+    /// Written every frame from real audio amplitude. Applied after the update
+    /// scheduler so nothing else overwrites the mouth within the same frame.
+    void setLipSync(float value) {
+        _lipSyncValue = value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
+    }
+
+    void setLookTarget(float x, float y) {
+        _lookX = x < -1.0f ? -1.0f : (x > 1.0f ? 1.0f : x);
+        _lookY = y < -1.0f ? -1.0f : (y > 1.0f ? 1.0f : y);
+        _hasLookTarget = true;
+    }
+
+    bool startMotion(const std::string &group, Csm::csmInt32 index) {
+        if (_setting == nullptr || _motionManager == nullptr) {
+            return false;
+        }
+        const Csm::csmInt32 count = _setting->GetMotionCount(group.c_str());
+        if (count <= 0 || index < 0 || index >= count) {
+            return false;
+        }
+        Csm::CubismMotion *motion = loadMotion(group, index);
+        if (motion == nullptr) {
+            return false;
+        }
+        // Priority 2 beats the idle rotation started at priority 1, so a gesture
+        // interrupts waiting rather than queueing behind it.
+        _motionManager->StartMotionPriority(motion, false, 2);
+        return true;
+    }
+
+    bool hitTest(const std::string &area, float x, float y) {
+        if (_setting == nullptr) {
+            return false;
+        }
+        const Csm::csmInt32 count = _setting->GetHitAreasCount();
+        for (Csm::csmInt32 i = 0; i < count; ++i) {
+            if (strcmp(_setting->GetHitAreaName(i), area.c_str()) == 0) {
+                return IsHit(_setting->GetHitAreaId(i), x, y);
+            }
+        }
+        return false;
     }
 
     Csm::csmInt32 idleMotionCount() const { return _idleMotionCount; }
@@ -137,6 +181,56 @@ public:
     Csm::csmInt32 expressionCount() const { return static_cast<Csm::csmInt32>(_expressions.GetSize()); }
 
 private:
+    /// Applied after the scheduler: lip sync is additive over whatever the motion
+    /// wanted the mouth to do, and look-at is additive over breath's head sway,
+    /// so neither fights the animation that produced the pose.
+    void applyLookAndLipSync() {
+        auto *ids = Csm::CubismFramework::GetIdManager();
+        for (Csm::csmUint32 i = 0; i < _lipSyncIds.GetSize(); ++i) {
+            _model->AddParameterValue(_lipSyncIds[i], _lipSyncValue, 0.8f);
+        }
+        if (!_hasLookTarget) {
+            return;
+        }
+        _model->AddParameterValue(ids->GetId(Csm::DefaultParameterId::ParamAngleX), _lookX * 30.0f);
+        _model->AddParameterValue(ids->GetId(Csm::DefaultParameterId::ParamAngleY), _lookY * 30.0f);
+        _model->AddParameterValue(ids->GetId(Csm::DefaultParameterId::ParamAngleZ), _lookX * _lookY * -30.0f);
+        _model->AddParameterValue(ids->GetId(Csm::DefaultParameterId::ParamBodyAngleX), _lookX * 10.0f);
+        _model->AddParameterValue(ids->GetId(Csm::DefaultParameterId::ParamEyeBallX), _lookX);
+        _model->AddParameterValue(ids->GetId(Csm::DefaultParameterId::ParamEyeBallY), _lookY);
+    }
+
+    /// Shared by idle rotation and explicit gestures.
+    Csm::CubismMotion *loadMotion(const std::string &group, Csm::csmInt32 index) {
+        const Csm::csmChar *file = _setting->GetMotionFileName(group.c_str(), index);
+        if (file == nullptr || strlen(file) == 0) {
+            return nullptr;
+        }
+        const std::string key = group + "_" + std::to_string(index);
+        auto cached = _motions.find(key);
+        if (cached != _motions.end()) {
+            return cached->second;
+        }
+        std::vector<unsigned char> bytes;
+        if (!readFile(_home + "/" + file, bytes)) {
+            return nullptr;
+        }
+        auto *motion = static_cast<Csm::CubismMotion *>(
+            LoadMotion(bytes.data(), static_cast<Csm::csmSizeInt>(bytes.size()), nullptr));
+        if (motion == nullptr) {
+            return nullptr;
+        }
+        // Effect ids let a motion cooperate with automatic blink and lip sync
+        // instead of fighting them.
+        motion->SetEffectIds(_eyeBlinkIds, _lipSyncIds);
+        const Csm::csmFloat32 fade = _setting->GetMotionFadeInTimeValue(group.c_str(), index);
+        if (fade >= 0.0f) { motion->SetFadeInTime(fade); }
+        const Csm::csmFloat32 fadeOut = _setting->GetMotionFadeOutTimeValue(group.c_str(), index);
+        if (fadeOut >= 0.0f) { motion->SetFadeOutTime(fadeOut); }
+        _motions[key] = motion;
+        return motion;
+    }
+
     void loadExpressions() {
         const Csm::csmInt32 count = _setting->GetExpressionCount();
         for (Csm::csmInt32 index = 0; index < count; ++index) {
@@ -232,36 +326,6 @@ private:
         }
     }
 
-    Csm::CubismMotion *idleMotion(Csm::csmInt32 index) {
-        const Csm::csmChar *file = _setting->GetMotionFileName(_idleGroup.c_str(), index);
-        if (file == nullptr || strlen(file) == 0) {
-            return nullptr;
-        }
-        const std::string key = _idleGroup + "_" + std::to_string(index);
-        auto cached = _motions.find(key);
-        if (cached != _motions.end()) {
-            return cached->second;
-        }
-        std::vector<unsigned char> bytes;
-        if (!readFile(_home + "/" + file, bytes)) {
-            return nullptr;
-        }
-        auto *motion = static_cast<Csm::CubismMotion *>(
-            LoadMotion(bytes.data(), static_cast<Csm::csmSizeInt>(bytes.size()), nullptr));
-        if (motion == nullptr) {
-            return nullptr;
-        }
-        // Effect ids let a motion cooperate with automatic blink and lip sync
-        // instead of fighting them.
-        motion->SetEffectIds(_eyeBlinkIds, _lipSyncIds);
-        const Csm::csmFloat32 fade = _setting->GetMotionFadeInTimeValue(_idleGroup.c_str(), index);
-        if (fade >= 0.0f) { motion->SetFadeInTime(fade); }
-        const Csm::csmFloat32 fadeOut = _setting->GetMotionFadeOutTimeValue(_idleGroup.c_str(), index);
-        if (fadeOut >= 0.0f) { motion->SetFadeOutTime(fadeOut); }
-        _motions[key] = motion;
-        return motion;
-    }
-
     void startRandomIdleMotion() {
         if (_idleMotionCount <= 0 || _motionManager == nullptr) {
             return;
@@ -270,7 +334,7 @@ private:
         // is easier to inspect and cannot surprise a test.
         const Csm::csmInt32 index = _nextIdle % _idleMotionCount;
         _nextIdle = (_nextIdle + 1) % (_idleMotionCount == 0 ? 1 : _idleMotionCount);
-        Csm::CubismMotion *motion = idleMotion(index);
+        Csm::CubismMotion *motion = loadMotion(_idleGroup, index);
         if (motion != nullptr) {
             _motionManager->StartMotionPriority(motion, false, 1);
         }
@@ -332,6 +396,10 @@ private:
     Csm::csmInt32 _idleMotionCount = 0;
     Csm::csmInt32 _nextIdle = 0;
     Csm::csmBool _motionUpdated = false;
+    float _lipSyncValue = 0.0f;
+    float _lookX = 0.0f;
+    float _lookY = 0.0f;
+    bool _hasLookTarget = false;
     std::map<std::string, Csm::CubismMotion *> _motions;
     Csm::csmVector<Csm::ACubismMotion *> _expressions;
     Csm::csmVector<Csm::CubismIdHandle> _eyeBlinkIds;
@@ -488,6 +556,32 @@ private:
     _model->setMvp(scaleX, scaleY, translateY);
     renderer->StartFrame(commandBuffer, renderPassDescriptor);
     renderer->DrawModel();
+}
+
+- (void)setLipSyncValue:(float)value {
+    if (_model != nullptr) {
+        _model->setLipSync(value);
+    }
+}
+
+- (void)setLookTargetX:(float)x y:(float)y {
+    if (_model != nullptr) {
+        _model->setLookTarget(x, y);
+    }
+}
+
+- (BOOL)startMotionInGroup:(NSString *)group index:(NSInteger)index {
+    if (_model == nullptr || group.length == 0) {
+        return NO;
+    }
+    return _model->startMotion(group.UTF8String, static_cast<Csm::csmInt32>(index)) ? YES : NO;
+}
+
+- (BOOL)hitTestArea:(NSString *)area atX:(float)x y:(float)y {
+    if (_model == nullptr || area.length == 0) {
+        return NO;
+    }
+    return _model->hitTest(area.UTF8String, x, y) ? YES : NO;
 }
 
 - (void)shutdown {

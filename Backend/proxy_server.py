@@ -27,16 +27,31 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 from mock_server import journey_attachment_error
+from voice_profile import VoiceProfile, load_profile
 
 UPSTREAM_URL = "https://api.deepseek.com/chat/completions"
 UPSTREAM_MODEL = "deepseek-v4-flash"
 UPSTREAM_TIMEOUT_SECONDS = 60
 MAXIMUM_PROMPT_CHARACTERS = 8_000
 
+SPEECH_URL = os.environ.get("JOI_SPEECH_URL", "http://127.0.0.1:9880/tts")
+SPEECH_TIMEOUT_SECONDS = 180
+SPEECH_TEXT_LANGUAGE = os.environ.get("JOI_SPEECH_TEXT_LANG", "ja")
+MAXIMUM_SPEECH_CHARACTERS = 400
+
+# The spoken language and the displayed language differ on purpose, so the model
+# is asked for both in one turn rather than a second call: one round trip keeps
+# the two consistent and the audio close behind the text.
+VOICE_DELIMITER = "###JA###"
+
 SYSTEM_PROMPT = (
-    "你是 Joi，用户的角色陪伴。用简体中文回答，语气自然、简洁、克制。"
+    "你是 Joi，用户的角色陪伴。语气自然、简洁、克制。"
     "不要假装拥有位置、相机、记忆或网络访问能力。"
     "如果你不确定某个事实，直接说不确定，不要编造来源。"
+    "\n\n输出格式要求：先用简体中文写给用户看的回复，"
+    f"然后单独一行写 {VOICE_DELIMITER}，"
+    "再写这句回复对应的日语口语台词（用于语音合成，只写台词本身，"
+    "不要注音、不要罗马字、不要解释）。两部分意思必须一致。"
 )
 
 # Stable, provider-independent codes. The client maps these to its own copy; no
@@ -120,6 +135,63 @@ class UpstreamError(Exception):
         self.code = code
 
 
+def split_display_and_voice(answer: str) -> tuple[str, str | None]:
+    """Separates the displayed reply from the spoken line.
+
+    A model that ignores the format simply yields no voice line, which stays
+    silent rather than speaking the Chinese text with a Japanese voice.
+    """
+    if VOICE_DELIMITER not in answer:
+        return answer.strip(), None
+    display, _, voice = answer.partition(VOICE_DELIMITER)
+    spoken = voice.strip()
+    return display.strip(), (spoken or None)
+
+
+def synthesize(text: str, emotion: str, profile: VoiceProfile, key: str = "") -> bytes:
+    """Returns WAV bytes for one spoken line from the local speech service.
+
+    `key` is unused: the local service needs no credential. It is accepted so the
+    caller does not have to special-case this engine.
+    """
+    take = profile.take(emotion)
+    payload = json.dumps(
+        {
+            "ref_audio_path": str(take.reference_audio),
+            "prompt_text": take.prompt_text,
+            "prompt_lang": profile.prompt_language,
+            "text": text[:MAXIMUM_SPEECH_CHARACTERS],
+            "text_lang": SPEECH_TEXT_LANGUAGE,
+            "media_type": "wav",
+            "streaming_mode": 0,
+            "speed_factor": take.speed,
+            "seed": int(os.environ.get("JOI_SPEECH_SEED", "20260809")),
+            "top_k": 5,
+            "top_p": 0.85,
+            "temperature": 0.7,
+            "repetition_penalty": 1.35,
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        SPEECH_URL,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=SPEECH_TIMEOUT_SECONDS) as response:
+            audio = response.read()
+    except urllib.error.HTTPError as error:
+        raise UpstreamError(
+            ERROR_UPSTREAM_REJECTED if error.code < 500 else ERROR_UPSTREAM_UNAVAILABLE
+        ) from None
+    except (urllib.error.URLError, TimeoutError, OSError):
+        raise UpstreamError(ERROR_UPSTREAM_UNAVAILABLE) from None
+    if not audio.startswith(b"RIFF"):
+        raise UpstreamError(ERROR_UPSTREAM_MALFORMED)
+    return audio
+
+
 def companion_events(request: dict[str, Any], deltas: Iterable[str]) -> Iterator[dict[str, Any]]:
     """Maps provider deltas onto the frozen companion-event contract.
 
@@ -150,13 +222,15 @@ def companion_events(request: dict[str, Any], deltas: Iterable[str]) -> Iterator
     try:
         for index, delta in enumerate(deltas, start=1):
             accumulated.append(delta)
-            # A replaceable projection: cumulative text, never an accepted line.
+            # Drafts show only the displayed half. Once the delimiter arrives the
+            # rest is the spoken line, which must not appear as visible text.
+            visible, _ = split_display_and_voice("".join(accumulated))
             yield {
                 **common,
                 "eventID": f"{request['requestID']}-draft-{index}",
                 "phase": "thinking",
                 "contentState": "streamingDraft",
-                "displayText": "".join(accumulated),
+                "displayText": visible,
                 "voiceLine": None,
                 "memoryEligibility": "none",
                 "timestamp": timestamp(),
@@ -175,7 +249,7 @@ def companion_events(request: dict[str, Any], deltas: Iterable[str]) -> Iterator
         }
         return
 
-    final = "".join(accumulated).strip()
+    final, spoken = split_display_and_voice("".join(accumulated))
     if not final:
         yield {
             **common,
@@ -196,7 +270,11 @@ def companion_events(request: dict[str, Any], deltas: Iterable[str]) -> Iterator
         "phase": "done",
         "contentState": "acceptedFinal",
         "displayText": final,
-        "voiceLine": final,
+        # The spoken line is a separate language from the displayed text, so it
+        # is carried separately rather than assumed to be the same string. A
+        # missing line means the turn stays silent, never spoken in the wrong
+        # language.
+        "voiceLine": spoken,
         "memoryEligibility": "proposalAllowed",
         "timestamp": timestamp(),
     }
@@ -223,6 +301,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
         self._json(HTTPStatus.OK, {"status": "ok", "persistence": False, "upstream": True})
 
     def do_POST(self) -> None:  # noqa: N802
+        if self.path == "/v1/speech":
+            self._speech()
+            return
         if self.path != "/v1/chat/streams":
             self.send_error(HTTPStatus.NOT_FOUND)
             return
@@ -251,6 +332,39 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
             # The client cancelled the turn. Nothing to report.
+            return
+
+    def _speech(self) -> None:
+        """Synthesises one spoken line. Returns WAV, or a stable code and no audio.
+
+        Failure must never be papered over with a different voice: the client
+        keeps the text and stays silent.
+        """
+        request = self._read_json()
+        if request is None:
+            return
+        text = request.get("text")
+        if not isinstance(text, str) or not text.strip():
+            self._json(HTTPStatus.BAD_REQUEST, {"code": "invalid_request"})
+            return
+        emotion = str(request.get("emotion") or "neutral")
+        profile: VoiceProfile | None = getattr(self.server, "voice_profile", None)
+        if profile is None:
+            self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"code": "voice_unavailable"})
+            return
+        try:
+            audio = synthesize(text, emotion, profile)
+        except UpstreamError as error:
+            self._json(HTTPStatus.BAD_GATEWAY, {"code": error.code})
+            return
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "audio/wav")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(audio)))
+        self.end_headers()
+        try:
+            self.wfile.write(audio)
+        except (BrokenPipeError, ConnectionResetError):
             return
 
     def _read_json(self) -> dict[str, Any] | None:
@@ -289,6 +403,15 @@ def main() -> None:
     server = ThreadingHTTPServer((args.host, args.port), ProxyHandler)
     # Held in memory for the process lifetime only.
     server.api_key = api_key()  # type: ignore[attr-defined]
+    # Voice is optional: without a profile the app still chats, and stays silent
+    # rather than substituting a different voice.
+    try:
+        profile = load_profile(os.environ.get("JOI_VOICE_LANG", "ja"))
+        server.voice_profile = profile  # type: ignore[attr-defined]
+        print(f"voice: {profile.label} [{', '.join(profile.emotions)}]")
+    except SystemExit as reason:
+        server.voice_profile = None  # type: ignore[attr-defined]
+        print(f"voice: disabled ({reason})")
     print(f"Joi proxy on http://{args.host}:{args.port} -> provider streaming enabled")
     server.serve_forever()
 
