@@ -6,6 +6,8 @@ Last updated: 2026-08-12
 
 G1 deterministic foundation and the bounded `G2-J1A` preview slice are published to the private GitHub repository `Gallo233/Joi-Mobile`. The local `G2-J1B` import/install/activation/removal implementation has closed its first Closeout rework and is a Director re-review candidate on branch `codex/j1b-character-installer`. No deployment, cloud resource, vendor contact, license application, App Store submission or J1B remote push has been made.
 
+`G2-J2A`, the first Journey 2 slice, is now implemented locally on the same branch: one Chat text turn runs end to end against the local mock proxy with an accepted transcript, explicit stop and named failure states. It is not Director-reviewed. Response text comes from the contract mock, so this is not evidence of conversation quality; push-to-talk, memory proposals, source rendering and journey attachment remain unimplemented.
+
 On 2026-08-12 the J1B candidate was independently re-verified on this workstation before hand-off acceptance. One recorded evidence row did not reproduce: the CharacterRuntime suite failed on activation-lease revocation. The defect is fixed, the previously uncovered pre-CAS path now has a test, and every lane was re-run and re-recorded below. Superseded rows are kept rather than deleted so the evidence history stays auditable.
 
 ## Studio brief
@@ -103,6 +105,14 @@ G0 is closed with no `Rework` or `Blocked` decision. Public contract implementat
 | 2026-08-12 | J1B generic iOS Simulator build and iPhone 17 Pro, iOS 26.5 test after the fix | Pass; build succeeded and 9 tests, 0 skips | Preview/install/static activation, lease veto/release, fresh-store removal decision, cancellation cleanup and Chat/Map/session/journey continuity |
 | 2026-08-12 | Two consecutive XcodeGen generations after the fix | Pass, identical SHA-256 `c575ab6e6c2e73a177fbb50043582ba19397c4c18344598070baa88f0a1e36e2` | Matches the recorded J1B hash; the fix touches sources already in the generated targets |
 | 2026-08-12 | Backend and repository Python suites and PRD/TDD traceability after the fix | Pass, 19 tests and 24 traced P0 requirements | `unittest` lanes, not `pytest`: the pinned `Backend/.venv` has `jsonschema` only |
+| 2026-08-12 | `G2-J2A` live SSE defect found by running the App against the real mock | **Fail before fix** | The gateway read the stream with `AsyncSequence.lines`, which does not emit empty lines. Because a blank line is the SSE frame delimiter, both events concatenated into one invalid JSON payload and every turn failed with `malformedStream`. Unit tests over hand-written single frames passed; only the live lane caught it |
+| 2026-08-12 | `G2-J2A` second defect: collapsed conversation area hid turn status | **Fail before fix** | Pending, stop and failure status were rendered inside a container collapsed to zero height while the transcript was empty, so the first turn's failure was invisible. Visibility now keys on transcript-or-turn-state, not transcript alone |
+| 2026-08-12 | `G2-J2A` six-package regression | Pass, 103 tests, 0 failures, 0 skips in the private lane | CompanionCore 12, CharacterRuntime 60, ChatFeature 22, MapFeature 1, OfflinePack 7, SyncClient 1 |
+| 2026-08-12 | `G2-J2A` mock-backend integration lane | Pass, 2 tests | Opt-in via `JOI_MOBILE_MOCK_BACKEND_URL`; proves real `/v1/chat/streams` framing, `acceptedInput` then `acceptedFinal`, and identity echo. Skipped in the hermetic public suite |
+| 2026-08-12 | `G2-J2A` iPhone 17 Pro, iOS 26.5 simulator manual turn | Pass | Typed message sent, user line and companion reply each appended once, stage shrank to make room, composer cleared and reverted to the disabled voice control |
+| 2026-08-12 | `G2-J2A` unavailable-backend behaviour on simulator | Pass | With the mock stopped, the turn showed 「无法连接到 Joi 的服务；对话没有变化。」 plus a retry hint; the prior transcript was preserved and the failed message was never appended |
+| 2026-08-12 | `G2-J2A` app test target and Python suites | Pass, 9 app tests and 20 Python tests | Adds a catalog-drift guard proving no visible Chat literal bypasses the editable `zh-Hans` catalog |
+| 2026-08-12 | `G2-J2A` build and two consecutive XcodeGen generations | Pass, identical SHA-256 `ae8be7eb0b394a4ea57e246e885e0b64233cb2c88bb2280ec2c9a003f9542e2b` | Hash changed from the J1B value because `project.yml` gained the loopback-only ATS entry and the ChatFeature test dependency |
 
 The visible Chat composer, push-to-talk button, character runtime surface, Map card, navigation, source button and profile control are **placeholders**. The first slice proves composition/state/contracts and PoC seams; it does not provide complete Chat, Map, account, sync or production-backend journeys.
 

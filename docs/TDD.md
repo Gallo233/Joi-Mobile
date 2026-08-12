@@ -369,6 +369,28 @@ ZIP support intentionally implements a restricted profile. The owned preflight u
 
 The Studio may begin consumer work only after these contracts, the dependency pin and state-owner CAS tests pass. Closing `G2-J1B` additionally requires the full malicious corpus, cancellation/recovery/TOCTOU evidence, dependency and private-payload scans, generic simulator build/tests, and Product, Technical, Art, Safety and Quality closeout. `JM-P0-015` and `JM-P0-017` remain open until that closeout.
 
+### 6.6 G2-J2A — Everyday conversation turn
+
+`G2-J2A` is the first slice of PRD Journey 2. It makes one text turn real end to end: composer → typed request → official proxy boundary → server-sent events → accepted transcript, with explicit stop and named failure. It is deliberately local-only and Chinese-first. Real model quality, speech, memory proposals and journey attachment are later work.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J2A-01` | The composer is bound editable state; a blank or whitespace-only draft cannot send, and one in-flight turn cannot be sent twice | App / `AppModel.chatDraft`, `sendChatMessage` | App model turn tests |
+| `J2A-02` | Only `acceptedInput` and `acceptedFinal` become transcript lines, each exactly once per `eventID`; `partial` and `streamingDraft` remain replaceable projections; `cancelled` and `failed` are diagnostic only | ChatFeature / `ChatTurnProjection` | `ChatTurnProjectionTests` |
+| `J2A-03` | `CompanionSessionStore` remains the sole owner of accepted transcript ordering; a duplicate `eventID` or foreign `threadID` is refused | CompanionCore / `CompanionSessionStore.appendAccepted` | state-owner tests |
+| `J2A-04` | Requests reach a versioned `/v1/chat/streams` endpoint. Only loopback may use plain HTTP so the local mock can run; every other host must be HTTPS | ChatFeature / `ChatBackendEndpoint` | endpoint policy tests |
+| `J2A-05` | SSE framing is parsed by an owned incremental framer: a blank line terminates a frame, CRLF is tolerated, multi-line `data:` concatenates, and an overlong line fails closed | ChatFeature / `SSEFrameParser` | framing and boundary tests |
+| `J2A-06` | Transport failures surface stable, provider-independent codes with explicit retryability; no provider name, model name, prompt or response body is exposed | ChatFeature / `ChatTransportError` | transport code tests |
+| `J2A-07` | User stop cancels the turn, and a late terminal event cannot append text afterwards | App + ChatFeature / `stopChatTurn`, `ChatSessionController.cancel` | cancellation tests |
+| `J2A-08` | An unavailable, non-streaming or malformed backend renders a named non-destructive failure with the prior transcript intact — never as success | App / `ChatTurnState.failed` | simulator failure evidence and app model tests |
+| `J2A-09` | All visible turn copy lives in the editable `zh-Hans` catalog, including the interpolated composer placeholder | App / `Localizable.xcstrings` | catalog completeness and drift tests |
+
+`AsyncSequence.lines` must not be used to read SSE. It does not emit empty lines, and a blank line is exactly what delimits an SSE frame, so consecutive events silently concatenate into one invalid payload. `SSEFrameParser` exists for that reason and is driven one byte at a time by the gateway.
+
+The user's own message is not appended locally at send time. It becomes a transcript line only when the backend returns its `acceptedInput` event, so the transcript has a single source of truth and a turn can never append twice. While the turn is in flight the text is shown as explicitly unconfirmed pending content.
+
+This slice does **not** prove response quality, push-to-talk, speech synthesis, memory proposals, source projection rendering, journey attachment, incremental token streaming or any device behaviour. Token-level streaming needs a backend that actually chunks its events; the current mock returns whole events, so the reducer's draft path exists and is tested but has no production evidence yet.
+
 ## 7. Map, navigation and offline PoC
 
 - Wrap MapLibre Native in `MapSurfaceProvider`; it renders online styles and verified downloaded corridor resources but never owns route truth.
@@ -506,8 +528,8 @@ The first slice is complete when traceability, XcodeGen generation, generic simu
 |---|---|---|---|---|---|
 | JM-P0-001 | Two-surface shell | App, CompanionCore | `CompanionSessionStore`, `PrimarySurface` | `SurfaceContinuityTests` | G1/G2 |
 | JM-P0-002 | Local-first first run | App, CharacterRuntime | `AppContainer`, package importer | `LocalFirstOnboardingTests` | G2 |
-| JM-P0-003 | Full Chat stage | ChatFeature, CharacterRuntime | `ChatGateway`, `CharacterRenderer` | `ChatStageStateTests` | G2/G4 |
-| JM-P0-004 | Official AI boundary | ChatFeature, Backend | OpenAPI `/v1/chat/streams` | `MockSSEContractTests`, secret scan | G1/G3 |
+| JM-P0-003 | Full Chat stage | ChatFeature, CharacterRuntime, App | `ChatGateway`, `ChatTurnProjection`, `CharacterRenderer` | `ChatTurnProjectionTests`, `AppModelTests` chat turn cases | G2/G4 |
+| JM-P0-004 | Official AI boundary | ChatFeature, Backend | OpenAPI `/v1/chat/streams`, `SSEChatGateway`, `ChatBackendEndpoint` | `SSEChatGatewayTests`, `MockBackendIntegrationTests`, secret scan | G1/G3 |
 | JM-P0-005 | Layered local memory | CompanionCore, SyncClient | memory repository, `MemorySyncRecordV1` | `MemoryProposalAndDeletionTests` | G3 |
 | JM-P0-006 | Cross-surface continuity | CompanionCore, App | `CompanionSessionStore`, `JourneyContextSnapshot` | `ContextIsolationTests` | G1/G3 |
 | JM-P0-007 | Speech coordination | CompanionCore | `SpeechCoordinator` | `SpeechGenerationTests` | G2/G4 |

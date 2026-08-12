@@ -50,6 +50,12 @@ targets:
         NSLocationWhenInUseUsageDescription: 仅在可见的文化步行或地点请求中，Joi 才会使用你的位置。
         NSCameraUsageDescription: 仅在你主动使用“看见就问”时，Joi 才会使用相机。
         NSPhotoLibraryUsageDescription: Joi 只会读取你为地点提问主动选择的照片。
+        # Local development only: permits http://127.0.0.1 so Backend/mock_server.py
+        # can serve the chat contract. Arbitrary loads stay forbidden, so every
+        # non-loopback host must still be HTTPS.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: false
+          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.joi.mobile
@@ -76,6 +82,7 @@ targets:
     dependencies:
       - target: JoiMobile
       - package: CompanionCore
+      - package: ChatFeature
 schemes:
   JoiMobile:
     build:

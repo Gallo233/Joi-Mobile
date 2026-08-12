@@ -1,4 +1,5 @@
 import CharacterRuntime
+import ChatFeature
 import CompanionCore
 import Foundation
 import Observation
@@ -18,6 +19,21 @@ enum CharacterLibraryState: Equatable, Sendable {
     case removing(CharacterInstallationID)
     case cancelled
     case failed(message: String)
+}
+
+/// One conversation turn as the App may show it. `pending` text is not part of
+/// the accepted transcript: it becomes a transcript line only when the backend
+/// returns its `acceptedInput` event, so a turn can never append twice.
+enum ChatTurnState: Equatable, Sendable {
+    case idle
+    case pending(text: String, phase: CompanionPublicPhase)
+    case cancelled
+    case failed(message: String, retryable: Bool)
+
+    var isPending: Bool {
+        if case .pending = self { return true }
+        return false
+    }
 }
 
 struct CharacterImportPreview: Equatable, Sendable {
@@ -42,16 +58,26 @@ final class AppModel {
     var characterLibraryState: CharacterLibraryState = .idle
     var installedCharacters: [CharacterPackageCatalogEntry] = []
 
+    /// Composer text. Editable draft only; never a transcript line.
+    var chatDraft: String = ""
+    /// App projection of the session store's accepted transcript ordering.
+    private(set) var chatTranscript: [TranscriptEntry] = []
+    private(set) var chatTurnState: ChatTurnState = .idle
+
     let companionSession: CompanionSessionStore
     let journeyContext = JourneyContextStore()
     let speechCoordinator = SpeechCoordinator()
 
     private let installer: CharacterPackageInstaller
     private let renderer: any CharacterRenderer
+    private let chatController: ChatSessionController
+    private let chatProjection = ChatTurnProjection()
     private(set) var sessionSelection: CharacterSelection
     @ObservationIgnored private var operationTask: Task<Void, Never>?
     @ObservationIgnored private var operationGeneration = 0
     @ObservationIgnored private var activeRuntimeResource: ActiveRuntimeResource?
+    @ObservationIgnored private var chatTask: Task<Void, Never>?
+    @ObservationIgnored private var chatRequestID: String?
 
     /// The sole App projection of the session store. It changes only at
     /// construction and after a successful `CompanionSessionStore` CAS.
@@ -60,12 +86,19 @@ final class AppModel {
     init(
         installer: CharacterPackageInstaller? = nil,
         renderer: any CharacterRenderer = StaticCharacterRenderer(),
+        chatGateway: (any ChatGateway)? = nil,
         initialSelection: CharacterSelection = CharacterSelection(characterID: "joi.starter", displayName: "Joi"),
         threadID: String = "thread.local",
         sessionID: String = "session.local"
     ) {
         self.installer = installer ?? CharacterPackageInstaller(root: Self.defaultCharacterRoot())
         self.renderer = renderer
+        // The default endpoint is the local contract mock in `Backend/`. A public
+        // build must inject the official HTTPS proxy; `ChatBackendEndpoint`
+        // refuses any non-loopback plain-HTTP host.
+        self.chatController = ChatSessionController(
+            gateway: chatGateway ?? SSEChatGateway(endpoint: .localMock())
+        )
         self.sessionSelection = initialSelection
         self.companionSession = CompanionSessionStore(
             characterID: initialSelection.characterID,
@@ -88,6 +121,130 @@ final class AppModel {
     func cancelCharacterImport() {
         cancelActiveOperation()
         characterLibraryState = .cancelled
+    }
+
+    // MARK: - Chat turn
+
+    /// Starts one conversation turn. The draft clears immediately so the field
+    /// cannot be sent twice, but the text is only shown as pending until the
+    /// backend accepts it.
+    func sendChatMessage() {
+        let text = chatDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !chatTurnState.isPending else { return }
+        chatDraft = ""
+        chatTask?.cancel()
+        chatTask = Task { [weak self] in
+            await self?.runChatTurn(text: text)
+        }
+    }
+
+    /// User-initiated stop. A late terminal event cannot append text afterwards
+    /// because acceptance is keyed to the request that is still current.
+    func stopChatTurn() {
+        guard let requestID = chatRequestID else { return }
+        chatTask?.cancel()
+        chatTask = nil
+        Task { [chatController] in await chatController.cancel(requestID: requestID) }
+        chatRequestID = nil
+        chatTurnState = .cancelled
+    }
+
+    /// Kept async so tests can await a full turn. UI must use `sendChatMessage()`.
+    func runChatTurn(text: String) async {
+        let snapshot = await companionSession.current()
+        let requestID = UUID().uuidString.lowercased()
+        let request: ChatRequest
+        do {
+            request = try ChatRequest(
+                requestID: requestID,
+                threadID: snapshot.threadID,
+                sessionID: snapshot.sessionID,
+                characterID: snapshot.characterID,
+                text: text,
+                displayLocale: "zh-Hans",
+                voiceLocale: "zh-CN"
+            )
+        } catch {
+            chatTurnState = .failed(message: String(localized: "这条消息无法发送；对话没有变化。"), retryable: false)
+            return
+        }
+
+        chatRequestID = requestID
+        chatTurnState = .pending(text: text, phase: .received)
+        do {
+            let events = try await chatController.send(request)
+            try Task.checkCancellation()
+            guard chatRequestID == requestID else { return }
+            await apply(events, threadID: snapshot.threadID, requestID: requestID)
+        } catch is CancellationError {
+            guard chatRequestID == requestID else { return }
+            chatRequestID = nil
+            chatTurnState = .cancelled
+        } catch {
+            guard chatRequestID == requestID else { return }
+            chatRequestID = nil
+            chatTurnState = chatFailure(for: error)
+        }
+    }
+
+    private func apply(_ events: [CompanionEventV1], threadID: String, requestID: String) async {
+        var latestPhase = CompanionPublicPhase.received
+        var diagnostic: ChatTurnState?
+        for event in events {
+            switch chatProjection.effect(of: event) {
+            case let .append(entry):
+                if await companionSession.appendAccepted(entry, threadID: threadID) {
+                    chatTranscript.append(entry)
+                }
+                latestPhase = event.phase
+            case let .status(phase):
+                latestPhase = phase
+            case .draft:
+                // A replaceable projection. This slice shows no partial text
+                // because the mock proxy returns whole events; wiring token
+                // streaming needs a backend that actually chunks them.
+                latestPhase = event.phase
+            case let .diagnostic(phase, errorCode):
+                latestPhase = phase
+                diagnostic = .failed(
+                    message: errorCode == nil
+                        ? String(localized: "这次回应没有完成；对话没有变化。")
+                        : String(localized: "服务暂时无法回应，请稍后再试。"),
+                    retryable: errorCode != nil
+                )
+            }
+        }
+        guard chatRequestID == requestID else { return }
+        chatRequestID = nil
+        if let diagnostic {
+            chatTurnState = diagnostic
+        } else if latestPhase == .done {
+            chatTurnState = .idle
+        } else {
+            // A stream that ended before a terminal event is not a success.
+            chatTurnState = .failed(message: String(localized: "这次回应没有完成；对话没有变化。"), retryable: true)
+        }
+    }
+
+    private func chatFailure(for error: Error) -> ChatTurnState {
+        if let transport = error as? ChatTransportError {
+            let message: String
+            switch transport {
+            case .insecureEndpoint:
+                message = String(localized: "服务地址不安全，已阻止发送。")
+            case .unauthorized:
+                message = String(localized: "这次请求未获授权；对话没有变化。")
+            case .rateLimited, .serverUnavailable:
+                message = String(localized: "服务暂时无法回应，请稍后再试。")
+            case .invalidRequest, .malformedStream, .notStreaming, .backend:
+                message = String(localized: "无法连接到 Joi 的服务；对话没有变化。")
+            }
+            return .failed(message: message, retryable: transport.isRetryable)
+        }
+        if error is ChatSessionError {
+            return .failed(message: String(localized: "收到了不属于这次对话的回应，已丢弃。"), retryable: true)
+        }
+        return .failed(message: String(localized: "无法连接到 Joi 的服务；对话没有变化。"), retryable: true)
     }
 
     static func importRequest(for url: URL) -> CharacterPackageImportRequest? {

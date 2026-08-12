@@ -8,7 +8,7 @@ struct RootShellView: View {
             Group {
                 switch model.selectedSurface {
                 case .chat:
-                    ChatStageView(characterName: model.currentCharacterName)
+                    ChatStageView(model: model)
                 case .map:
                     MapExperienceView(characterName: model.currentCharacterName)
                 }

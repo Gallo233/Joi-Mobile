@@ -1,4 +1,5 @@
 import json
+import re
 import unittest
 from copy import deepcopy
 from pathlib import Path
@@ -32,10 +33,34 @@ class ContractArtifactTests(unittest.TestCase):
         self.assertEqual(catalog["sourceLanguage"], "zh-Hans")
         expected = {
             "聊天", "地图", "本地会话", "个人面板", "原生角色舞台",
-            "给 Joi 发消息", "按住说话", "已缓存的文化步行", "离线可用",
+            # The composer placeholder follows the current character name, so the
+            # catalog key is the interpolated form rather than a literal "Joi".
+            "给 %@ 发消息", "按住说话", "已缓存的文化步行", "离线可用",
             "路线预览", "查看来源",
+            # G2-J2A conversation turn copy.
+            "发送", "停止", "%@ 正在回应",
+            "已停止这次回应；对话没有变化。",
+            "这次回应没有完成；对话没有变化。",
+            "服务暂时无法回应，请稍后再试。",
+            "无法连接到 Joi 的服务；对话没有变化。",
         }
         self.assertTrue(expected.issubset(catalog["strings"]))
+
+    def test_no_visible_chat_copy_bypasses_the_editable_catalog(self) -> None:
+        """Every zh-Hans literal in the Chat surface must have a catalog key."""
+        catalog = json.loads(
+            (ROOT / "JoiMobile/Resources/Localizable.xcstrings").read_text(encoding="utf-8")
+        )
+        keys = catalog["strings"]
+        source = (ROOT / "JoiMobile/App/ChatStageView.swift").read_text(encoding="utf-8")
+        # Chinese string literals, with Swift interpolation normalised to %@.
+        literals = re.findall(r'"([^"\\\n]*[一-鿿][^"\\\n]*)"', source)
+        missing = [
+            normalised
+            for literal in literals
+            if (normalised := re.sub(r"\\\([^)]*\)", "%@", literal)) not in keys
+        ]
+        self.assertEqual(missing, [], f"chat copy missing from catalog: {missing}")
 
     def test_schemas_close_security_boundaries(self) -> None:
         for path in CONTRACTS.glob("*.schema.json"):

@@ -103,3 +103,19 @@
 - **Date:** 2026-08-11
 - **Decision:** Last-reference removal writes and fsyncs a stable recovery journal before atomically moving the verified content root to Trash, deleting/fsyncing catalog state and verifying physical absence. Any interrupted or failed phase returns `recoveryRequired` with a stable recovery key and can be resumed by the same removal request or startup recovery; it cannot report success while bytes remain in an untracked state.
 - **Reason:** Catalog disappearance alone is not evidence that local character assets were deleted, and silent filesystem failures make user-facing deletion claims untrustworthy.
+
+## DEC-015 — The transcript is server-accepted, not locally optimistic
+
+- **Status:** Accepted
+- **Date:** 2026-08-12
+- **Decision:** A user message becomes a transcript line only when the backend returns its `acceptedInput` event. The App does not append it locally at send time. While a turn is in flight the text is shown as explicitly unconfirmed pending content, and `CompanionSessionStore` remains the sole owner of accepted transcript ordering, refusing duplicate `eventID`s and foreign `threadID`s.
+- **Reason:** Local optimism plus a server echo is the classic double-append bug, and de-duplicating two differently-keyed copies of the same line is guesswork. One source of truth keyed by `eventID` makes "appended exactly once" checkable instead of hopeful. The cost is that a sent message is visibly pending until accepted; that is honest rather than hidden.
+- **Consequence:** A backend that never echoes accepted input would leave the user's line pending forever. `/v1/chat/streams` must keep emitting it, and that expectation is now covered by the mock-backend integration lane.
+
+## DEC-016 — Owned SSE framing; loopback is the only plain-HTTP exception
+
+- **Status:** Accepted
+- **Date:** 2026-08-12
+- **Decision:** CharacterRuntime-style ownership applies to transport too: Joi Mobile parses server-sent-event framing with its own incremental `SSEFrameParser` rather than any line-splitting convenience API, and `ChatBackendEndpoint` rejects every non-loopback plain-HTTP host. `NSAllowsLocalNetworking` is enabled with `NSAllowsArbitraryLoads` false so the local mock can serve development traffic without weakening production HTTPS.
+- **Reason:** `AsyncSequence.lines` does not emit empty lines, and a blank line is exactly the SSE frame delimiter, so it merges consecutive events into one invalid payload. This was found only by running the app against the real mock; unit tests over hand-written single frames passed while the live stream failed. Framing is a correctness boundary and must be owned and tested directly.
+- **Conditions:** Token-level streaming, `Last-Event-ID` resume and any retry policy remain unproven until a backend actually chunks events; the draft projection path is implemented and tested but carries no production evidence.
