@@ -1,33 +1,63 @@
 import CompanionCore
 import SwiftUI
 
+/// Chat is a persistent full-bleed character stage with floating chrome. The
+/// transcript is an opt-in drawer rather than a column, so conversation never
+/// compresses the character.
 struct ChatStageView: View {
     @Bindable var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @FocusState private var isComposerFocused: Bool
 
     private var characterName: String { model.currentCharacterName }
 
-    /// True as soon as there is anything to read below the stage — an accepted
-    /// line, pending text, a stop control or a failure. The conversation area
-    /// must not stay collapsed while a turn is in flight or has failed.
-    private var hasConversationContent: Bool {
-        !model.chatTranscript.isEmpty || model.chatTurnState != .idle
+    var body: some View {
+        ZStack {
+            CharacterStageView(
+                framing: model.stageFraming,
+                isResponding: model.chatTurnState.isPending
+            )
+            .ignoresSafeArea()
+
+            chrome
+
+            if model.isTranscriptPresented {
+                drawerOverlay
+            }
+        }
+        .animation(reduceMotion ? nil : .snappy(duration: 0.28), value: model.isTranscriptPresented)
     }
 
-    var body: some View {
-        VStack(spacing: 14) {
+    private var chrome: some View {
+        VStack(spacing: 12) {
             header
-            stage
-            transcript
-            composer
+            Spacer(minLength: 0)
+            StageControls(
+                framing: model.stageFraming,
+                onToggleFraming: { model.toggleStageFraming() },
+                onOpenTranscript: { model.presentTranscript() },
+                hasTranscript: !model.chatTranscript.isEmpty
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+
+            stageMessage
+                .padding(.horizontal, 20)
+
+            ChatComposer(
+                draft: $model.chatDraft,
+                isSending: model.chatTurnState.isPending,
+                placeholder: String(localized: "给 \(characterName) 发消息"),
+                onSend: { model.sendChatMessage() }
+            )
+            .padding(.horizontal, 20)
+            .padding(.bottom, 78)
         }
-        .padding(.top, 14)
+        .padding(.top, 6)
     }
 
     private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(characterName)
                     .font(.title2.bold())
                 Text("本地会话")
@@ -43,198 +73,58 @@ struct ChatStageView: View {
         .padding(.horizontal, 20)
     }
 
-    /// The stage shrinks once there is conversation to read, but never
-    /// disappears: character presence is the product identity.
-    private var stage: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [.indigo.opacity(0.55), .purple.opacity(0.25), .clear],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-            VStack(spacing: 10) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: hasConversationContent ? 30 : 52, weight: .light))
-                    .symbolEffect(
-                        .pulse,
-                        options: reduceMotion || !model.chatTurnState.isPending ? .nonRepeating : .repeating
-                    )
-                if !hasConversationContent {
-                    Text("原生角色舞台")
-                        .font(.title3.weight(.semibold))
-                    Text("Live2D / VRM 原生运行时通过验证前，将显示静态角色回退。")
-                        .font(.subheadline)
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal)
-                }
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(model.chatTurnState.isPending ? "Joi 角色舞台，正在回应" : "Joi 角色舞台，空闲")
-        }
-        .frame(maxHeight: hasConversationContent ? 132 : .infinity)
-        .padding(.horizontal, 16)
-    }
-
-    private var transcript: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(model.chatTranscript, id: \.eventID) { entry in
-                        TranscriptBubble(entry: entry)
-                            .id(entry.eventID)
-                    }
-                    turnStatus
-                        .id(Self.statusAnchor)
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 4)
-            }
-            .scrollDismissesKeyboard(.interactively)
-            .onChange(of: model.chatTranscript.count) { _, _ in
-                withAnimation(reduceMotion ? nil : .snappy) {
-                    proxy.scrollTo(Self.statusAnchor, anchor: .bottom)
-                }
-            }
-            .onChange(of: model.chatTurnState) { _, _ in
-                withAnimation(reduceMotion ? nil : .snappy) {
-                    proxy.scrollTo(Self.statusAnchor, anchor: .bottom)
-                }
-            }
-        }
-        .frame(maxHeight: hasConversationContent ? .infinity : 0)
-        .opacity(hasConversationContent ? 1 : 0)
-    }
-
-    @ViewBuilder private var turnStatus: some View {
+    /// One slot above the composer: the companion's line, or an honest status.
+    @ViewBuilder private var stageMessage: some View {
         switch model.chatTurnState {
         case .idle:
-            EmptyView()
-        case let .pending(text, _, draft):
-            VStack(alignment: .trailing, spacing: 8) {
-                PendingBubble(text: text)
-                if let draft, !draft.isEmpty {
-                    // Replaceable projection, not an accepted line: it carries no
-                    // selection or memory affordance until the turn completes.
-                    HStack {
-                        Text(draft)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                            .foregroundStyle(.primary)
-                        Spacer(minLength: 40)
-                    }
-                    .accessibilityLabel("\(characterName) 正在输入：\(draft)")
-                }
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("\(characterName) 正在回应")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    Button("停止") { model.stopChatTurn() }
-                        .font(.footnote.weight(.semibold))
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.indigo)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        case .cancelled:
-            statusLine("已停止这次回应；对话没有变化。", symbol: "stop.circle", tint: .secondary)
-        case let .failed(message, retryable):
-            VStack(alignment: .leading, spacing: 6) {
-                statusLine(message, symbol: "exclamationmark.triangle.fill", tint: .orange)
-                if retryable {
-                    Text("你可以重新发送这条消息。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    private func statusLine(_ text: String, symbol: String, tint: Color) -> some View {
-        Label(text, systemImage: symbol)
-            .font(.footnote)
-            .foregroundStyle(tint)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var composer: some View {
-        HStack(spacing: 12) {
-            TextField("给 \(characterName) 发消息", text: $model.chatDraft, axis: .vertical)
-                .lineLimit(1...4)
-                .textFieldStyle(.roundedBorder)
-                .focused($isComposerFocused)
-                .submitLabel(.send)
-                .onSubmit { model.sendChatMessage() }
-
-            if model.chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Button("按住说话", systemImage: "mic.fill") {}
-                    .labelStyle(.iconOnly)
-                    .frame(width: 44, height: 44)
-                    .background(Color.indigo, in: Circle())
-                    .foregroundStyle(.white)
-                    .disabled(true)
-                    .accessibilityHint("语音输入尚未启用")
-            } else {
-                Button("发送", systemImage: "arrow.up") {
-                    model.sendChatMessage()
-                }
-                .labelStyle(.iconOnly)
-                .frame(width: 44, height: 44)
-                .background(Color.indigo, in: Circle())
-                .foregroundStyle(.white)
-                .disabled(model.chatTurnState.isPending)
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 82)
-    }
-
-    private static let statusAnchor = "joi.chat.status"
-}
-
-private struct TranscriptBubble: View {
-    let entry: TranscriptEntry
-
-    private var isUser: Bool { entry.author == .user }
-
-    var body: some View {
-        HStack {
-            if isUser { Spacer(minLength: 40) }
-            Text(entry.text)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    isUser ? AnyShapeStyle(Color.indigo) : AnyShapeStyle(.ultraThinMaterial),
-                    in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            if let latest = model.latestCompanionLine {
+                CompanionBubble(
+                    characterName: characterName,
+                    text: latest.text,
+                    isDraft: false,
+                    onStop: nil
                 )
-                .foregroundStyle(isUser ? AnyShapeStyle(Color.white) : AnyShapeStyle(Color.primary))
-                .textSelection(.enabled)
-            if !isUser { Spacer(minLength: 40) }
+                .transition(.opacity)
+            }
+        case let .pending(_, _, draft):
+            CompanionBubble(
+                characterName: characterName,
+                text: draft ?? String(localized: "正在思考…"),
+                isDraft: true,
+                onStop: { model.stopChatTurn() }
+            )
+        case .cancelled:
+            StageStatusBanner(
+                message: String(localized: "已停止这次回应；对话没有变化。"),
+                hint: nil,
+                symbol: "stop.circle",
+                tint: .secondary
+            )
+        case let .failed(message, retryable):
+            StageStatusBanner(
+                message: message,
+                hint: retryable ? String(localized: "你可以重新发送这条消息。") : nil,
+                symbol: "exclamationmark.triangle.fill",
+                tint: .orange
+            )
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(isUser ? "我说：\(entry.text)" : "Joi 说：\(entry.text)")
     }
-}
 
-/// Text the user sent that the backend has not accepted yet. Deliberately
-/// styled as unconfirmed so it never reads as an accepted transcript line.
-private struct PendingBubble: View {
-    let text: String
+    private var drawerOverlay: some View {
+        HStack(spacing: 0) {
+            Color.black.opacity(0.18)
+                .ignoresSafeArea()
+                .onTapGesture { model.dismissTranscript() }
+                .accessibilityLabel(String(localized: "收起聊天记录"))
+                .accessibilityAddTraits(.isButton)
 
-    var body: some View {
-        HStack {
-            Spacer(minLength: 40)
-            Text(text)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(Color.indigo.opacity(0.28), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .foregroundStyle(.secondary)
+            TranscriptDrawer(
+                transcript: model.chatTranscript,
+                characterName: characterName,
+                onClose: { model.dismissTranscript() }
+            )
+            .frame(maxWidth: 330)
+            .transition(.move(edge: .trailing))
         }
-        .accessibilityLabel("正在发送：\(text)")
     }
 }

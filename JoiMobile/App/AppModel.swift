@@ -60,6 +60,10 @@ final class AppModel {
     var characterLibraryState: CharacterLibraryState = .idle
     var installedCharacters: [CharacterPackageCatalogEntry] = []
 
+    /// Presentation-only stage framing. Never touches session or renderer state.
+    var stageFraming: StageFraming = .fullBody
+    var isTranscriptPresented = false
+
     /// Composer text. Editable draft only; never a transcript line.
     var chatDraft: String = ""
     /// App projection of the session store's accepted transcript ordering.
@@ -124,6 +128,15 @@ final class AppModel {
         cancelActiveOperation()
         characterLibraryState = .cancelled
     }
+
+    /// The last accepted companion line, shown in the stage bubble.
+    var latestCompanionLine: TranscriptEntry? {
+        chatTranscript.last { $0.author == .companion }
+    }
+
+    func toggleStageFraming() { stageFraming = stageFraming.next }
+    func presentTranscript() { isTranscriptPresented = true }
+    func dismissTranscript() { isTranscriptPresented = false }
 
     // MARK: - Chat turn
 

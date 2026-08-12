@@ -52,18 +52,23 @@ class ContractArtifactTests(unittest.TestCase):
             (ROOT / "JoiMobile/Resources/Localizable.xcstrings").read_text(encoding="utf-8")
         )
         keys = catalog["strings"]
-        source = (ROOT / "JoiMobile/App/ChatStageView.swift").read_text(encoding="utf-8")
         # Chinese string literals, with Swift interpolation normalised to %@. The
         # segment alternation must admit `\(...)` explicitly: a regex that simply
         # excludes backslashes skips every interpolated string, which is the exact
         # case this guard exists to check.
         segment = r'(?:[^"\\\n]|\\\([^()]*\))'
-        literals = re.findall(rf'"({segment}*[一-鿿]{segment}*)"', source)
-        missing = [
-            normalised
-            for literal in literals
-            if (normalised := re.sub(r"\\\([^)]*\)", "%@", literal)) not in keys
+        surface = [
+            "JoiMobile/App/ChatStageView.swift",
+            "JoiMobile/App/CharacterStageView.swift",
+            "JoiMobile/App/ChatBubbleAndTranscript.swift",
         ]
+        missing: list[str] = []
+        for name in surface:
+            source = (ROOT / name).read_text(encoding="utf-8")
+            for literal in re.findall(rf'"({segment}*[一-鿿]{segment}*)"', source):
+                normalised = re.sub(r"\\\([^)]*\)", "%@", literal)
+                if normalised not in keys:
+                    missing.append(f"{name}: {normalised}")
         self.assertEqual(missing, [], f"chat copy missing from catalog: {missing}")
 
     def test_schemas_close_security_boundaries(self) -> None:
