@@ -21,18 +21,30 @@ struct Live2DDevFixture {
     let directory: String
     let model3: String
 
+    /// Development-only key. This exists so a developer who launched once with
+    /// the environment variable can then open the app normally from the home
+    /// screen. It is not the product path: a shipped build gets its model from
+    /// the installed character library, never from a developer setting.
+    private static let defaultsKey = "joi.live2d.devFixtureEntry"
+
     static var fromEnvironment: Live2DDevFixture? {
         let environment = ProcessInfo.processInfo.environment
-        guard let entry = environment["JOI_LIVE2D_FIXTURE_ENTRY_URL"], !entry.isEmpty else {
-            live2dLog.notice("live2d fixture: JOI_LIVE2D_FIXTURE_ENTRY_URL not set")
+        let supplied = environment["JOI_LIVE2D_FIXTURE_ENTRY_URL"]
+        if let supplied, !supplied.isEmpty {
+            // Remember it so a plain launch from the home screen also works.
+            UserDefaults.standard.set(supplied, forKey: defaultsKey)
+        }
+        let remembered = UserDefaults.standard.string(forKey: defaultsKey)
+        guard let entry = (supplied?.isEmpty == false ? supplied : remembered), !entry.isEmpty else {
+            live2dLog.notice("live2d fixture: none supplied by environment or remembered")
             return nil
         }
-        let url = URL(fileURLWithPath: entry)
         guard FileManager.default.isReadableFile(atPath: entry) else {
-            // The name is intentionally not logged; only the fact of the miss.
+            // The path is intentionally not logged; only the fact of the miss.
             live2dLog.error("live2d fixture: supplied entry is not readable")
             return nil
         }
+        let url = URL(fileURLWithPath: entry)
         return Live2DDevFixture(
             directory: url.deletingLastPathComponent().path,
             model3: url.lastPathComponent
