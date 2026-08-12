@@ -19,3 +19,6 @@ PrivateFixtures/
 *.moc3
 *.vrm
 *.vrma
+
+# Live2D Cubism SDK is vendored locally and is not redistributable.
+Vendor/

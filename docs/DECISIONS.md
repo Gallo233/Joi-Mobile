@@ -139,3 +139,13 @@
 - **Fallback:** VRM is an open standard with no equivalent per-application approval gate. Because DEC-003 keeps both runtimes behind one `CharacterRenderer` boundary, shipping VRM-first with Live2D support gated behind approval is a viable path that does not require an architecture change. Static fallback remains supported in all cases.
 - **Not public:** Fee amounts, revenue-share percentages and review timelines are not published and must be obtained from Live2D directly via the Expandable Application request form. Do not plan against assumed numbers.
 - **Authority:** No vendor has been contacted and no licence has been applied for. That step needs explicit user action and is out of scope for implementation work.
+
+## DEC-019 — Live2D is an opt-in build variant, not a repository dependency
+
+- **Status:** Accepted
+- **Date:** 2026-08-12
+- **Decision:** The Cubism SDK is vendored by `Tools/setup_live2d.sh` into an untracked `Vendor/Live2D/`, and admission happens only through `project.live2d.yml`, which `include:`s the default `project.yml` and adds the Framework sources, the Metal renderer, the Core XCFramework and the Joi bridge. `project.yml` stays free of every Live2D reference, so a clone without the SDK still generates, builds, tests and ships the static fallback.
+- **Boundary preserved:** The bridge lives in the App target, not in CharacterRuntime. The J1B rule that CharacterRuntime admits exactly one pinned dependency is therefore unchanged, and its 60 tests keep running with no vendor runtime. `CharacterRenderer` remains the experience boundary.
+- **Build facts that are not obvious:** Cubism's Metal renderer is written for manual reference counting and sends `-retain`/`-release`/`-autorelease` explicitly, so those sources are compiled with `-fno-objc-arc` while the Joi bridge keeps ARC. The Metal renderer is selected by `CSM_TARGET_IPHONE_ES2` despite the name. Shader libraries are platform-specific and are compiled per build into a `FrameworkMetallibs` bundle subdirectory, which is where `CubismShader_Metal` looks them up by name; the repository's script sandboxing stays enabled, so that phase declares every file it reads.
+- **Reason:** A non-redistributable, licence-gated runtime must not become a precondition for building or testing the product. Making it an explicit build variant keeps the static-fallback promise of DEC-003 honest and testable rather than aspirational.
+- **Conditions:** Compiling and linking is proven; rendering is not. The extended blend-mode shader matrix (about 470 variants) is not generated, so a model requiring one must fall back rather than render an incorrect blend.

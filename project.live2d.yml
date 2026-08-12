@@ -1,0 +1,71 @@
+# Live2D-enabled project variant.
+#
+# `project.yml` stays the default and builds with no vendor runtime at all, so a
+# clone without the Live2D SDK still compiles, tests and ships the static
+# fallback. This spec adds the Cubism Native Framework, its Metal renderer and
+# the Joi bridge on top, and requires `Tools/setup_live2d.sh` to have run.
+#
+#   Tools/setup_live2d.sh <sdk path>
+#   xcodegen generate --spec project.live2d.yml
+include:
+  - project.yml
+targets:
+  JoiMobile:
+    sources:
+      - path: JoiMobile
+      - path: Live2D
+        name: Live2DBridge
+      # Only the Metal renderer survives Tools/setup_live2d.sh, so the whole
+      # Framework source tree can be compiled as-is.
+      - path: Vendor/Live2D/Framework/src
+        name: CubismFramework
+        # Cubism's Metal renderer is written for manual reference counting and
+        # sends -retain/-release/-autorelease explicitly, so it cannot be
+        # compiled under ARC. Our own bridge in Live2D/ keeps ARC.
+        compilerFlags:
+          - -fno-objc-arc
+        excludes:
+          - "**/CMakeLists.txt"
+          - "**/*.metal"
+    settings:
+      base:
+        # The Metal renderer is selected by this define; the SDK's own iOS Metal
+        # sample uses the same one despite its ES2 name.
+        GCC_PREPROCESSOR_DEFINITIONS:
+          - $(inherited)
+          - CSM_TARGET_IPHONE_ES2=1
+        HEADER_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/Vendor/Live2D/Core/include
+          - $(SRCROOT)/Vendor/Live2D/Framework/src
+        CLANG_CXX_LANGUAGE_STANDARD: gnu++17
+        CLANG_CXX_LIBRARY: libc++
+        SWIFT_OBJC_BRIDGING_HEADER: Live2D/JoiMobile-Bridging-Header.h
+        # The C++ framework is third-party source; its warnings are not
+        # actionable here and must not drown our own build output.
+        GCC_WARN_INHIBIT_ALL_WARNINGS: NO
+        JOI_LIVE2D_ENABLED: YES
+        OTHER_SWIFT_FLAGS:
+          - $(inherited)
+          - -DJOI_LIVE2D
+    dependencies:
+      - framework: Vendor/Live2D/Live2DCubismCore.xcframework
+        embed: false
+      - sdk: Metal.framework
+      - sdk: MetalKit.framework
+      - sdk: QuartzCore.framework
+      - sdk: CoreGraphics.framework
+    preBuildScripts:
+      # Script sandboxing stays on, so every file the phase reads is declared.
+      - script: bash "$SRCROOT/Tools/build_live2d_metallibs.sh"
+        name: Compile Cubism Metal libraries
+        inputFiles:
+          - $(SRCROOT)/Tools/build_live2d_metallibs.sh
+          - $(SRCROOT)/Vendor/Live2D/Framework/src/Rendering/Metal/Shaders/MetalShaders.metal
+          - $(SRCROOT)/Vendor/Live2D/Framework/src/Rendering/Metal/Shaders/VertShaderSrcBlend.metal
+          - $(SRCROOT)/Vendor/Live2D/Framework/src/Rendering/Metal/Shaders/VertShaderSrcMaskedBlend.metal
+          - $(SRCROOT)/Vendor/Live2D/Framework/src/Rendering/Metal/Shaders/MetalShaderTypes.h
+        outputFiles:
+          - $(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/FrameworkMetallibs/MetalShaders.metallib
+          - $(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/FrameworkMetallibs/VertShaderSrcBlend.metallib
+          - $(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/FrameworkMetallibs/VertShaderSrcMaskedBlend.metallib

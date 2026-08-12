@@ -104,6 +104,39 @@ class PrivateCharacterFixturePolicyTests(unittest.TestCase):
                 violations.append(str(path.relative_to(ROOT)))
         self.assertEqual(violations, [])
 
+    def test_live2d_sdk_is_never_committed(self) -> None:
+        """The Cubism SDK is not redistributable, so no part of it may be tracked."""
+        tracked = subprocess.run(
+            ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True
+        ).stdout.split()
+        forbidden = ("Vendor/", "Live2DCubismCore", "CubismFramework.hpp", ".metallib")
+        for name in tracked:
+            for pattern in forbidden:
+                self.assertNotIn(pattern, name, f"vendored Live2D artefact tracked: {name}")
+        self.assertIn("Vendor/", (ROOT / ".gitignore").read_text(encoding="utf-8"))
+
+    def test_default_project_spec_admits_no_vendor_runtime(self) -> None:
+        """`project.yml` must still build with no Live2D runtime at all, so a
+        clone without the SDK compiles and ships the static fallback."""
+        default = (ROOT / "project.yml").read_text(encoding="utf-8")
+        for token in ("Live2D", "Cubism", "Vendor/"):
+            self.assertNotIn(token, default)
+        # The opt-in spec is where admission happens, and it must layer on top of
+        # the default rather than replacing it.
+        live2d = (ROOT / "project.live2d.yml").read_text(encoding="utf-8")
+        self.assertIn("include:", live2d)
+        self.assertIn("project.yml", live2d)
+        self.assertIn("CSM_TARGET_IPHONE_ES2", live2d)
+        # Cubism's Metal renderer uses manual reference counting.
+        self.assertIn("-fno-objc-arc", live2d)
+
+    def test_character_runtime_still_has_no_native_runtime_dependency(self) -> None:
+        """The J1B boundary is unchanged: the bridge lives in the App target, so
+        CharacterRuntime and its tests stay free of any vendor runtime."""
+        manifest = (ROOT / "Packages/CharacterRuntime/Package.swift").read_text(encoding="utf-8")
+        for token in ("Cubism", "Live2DCubismCore", "Vendor"):
+            self.assertNotIn(token, manifest)
+
     def test_chinese_character_library_copy_remains_in_editable_catalog(self) -> None:
         catalog = json.loads(
             (ROOT / "JoiMobile/Resources/Localizable.xcstrings").read_text(
