@@ -115,7 +115,11 @@ struct Live2DStageSurface: UIViewRepresentable {
                 live2d model loaded: canvas \(facts.canvasWidth, privacy: .public)x\
                 \(facts.canvasHeight, privacy: .public) ppu \(facts.pixelsPerUnit, privacy: .public) \
                 parameters \(facts.parameterCount, privacy: .public) parts \
-                \(facts.partCount, privacy: .public) drawables \(facts.drawableCount, privacy: .public)
+                \(facts.partCount, privacy: .public) drawables \(facts.drawableCount, privacy: .public) \
+                idleMotions \(facts.idleMotionCount, privacy: .public) expressions \
+                \(facts.expressionCount, privacy: .public) eyeBlink \(facts.hasEyeBlink, privacy: .public) \
+                breath \(facts.hasBreath, privacy: .public) physics \(facts.hasPhysics, privacy: .public) \
+                pose \(facts.hasPose, privacy: .public)
                 """)
             self.model = loaded
         }

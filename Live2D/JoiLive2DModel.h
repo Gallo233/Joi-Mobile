@@ -13,6 +13,14 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) NSInteger parameterCount;
 @property (nonatomic, readonly) NSInteger partCount;
 @property (nonatomic, readonly) NSInteger drawableCount;
+/// Animation capabilities actually established for this model, as opposed to
+/// declared in its model3 graph.
+@property (nonatomic, readonly) NSInteger idleMotionCount;
+@property (nonatomic, readonly) NSInteger expressionCount;
+@property (nonatomic, readonly) BOOL hasEyeBlink;
+@property (nonatomic, readonly) BOOL hasBreath;
+@property (nonatomic, readonly) BOOL hasPhysics;
+@property (nonatomic, readonly) BOOL hasPose;
 @end
 
 /// Thin Objective-C++ boundary over the Cubism Native Framework.

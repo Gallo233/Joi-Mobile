@@ -5,14 +5,22 @@
 #import <CubismFramework.hpp>
 #import <CubismDefaultParameterId.hpp>
 #import <CubismModelSettingJson.hpp>
+#import <Effect/CubismBreath.hpp>
+#import <Effect/CubismEyeBlink.hpp>
 #import <Id/CubismIdManager.hpp>
 #import <Math/CubismMatrix44.hpp>
 #import <Model/CubismUserModel.hpp>
+#import <Motion/CubismBreathUpdater.hpp>
+#import <Motion/CubismEyeBlinkUpdater.hpp>
+#import <Motion/CubismExpressionUpdater.hpp>
 #import <Motion/CubismMotion.hpp>
+#import <Motion/CubismPhysicsUpdater.hpp>
+#import <Motion/CubismPoseUpdater.hpp>
 #import <Physics/CubismPhysics.hpp>
 #import <Rendering/Metal/CubismRenderer_Metal.hpp>
 #import <Utils/CubismString.hpp>
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -92,43 +100,183 @@ public:
             return false;
         }
 
-        // Physics and pose are optional; a model without them is valid.
-        const Csm::csmChar *physics = _setting->GetPhysicsFileName();
-        if (physics != nullptr && strlen(physics) > 0) {
-            std::vector<unsigned char> bytes;
-            if (readFile(directory + "/" + physics, bytes)) {
-                LoadPhysics(bytes.data(), static_cast<Csm::csmSizeInt>(bytes.size()));
-            }
-        }
-        const Csm::csmChar *pose = _setting->GetPoseFileName();
-        if (pose != nullptr && strlen(pose) > 0) {
-            std::vector<unsigned char> bytes;
-            if (readFile(directory + "/" + pose, bytes)) {
-                LoadPose(bytes.data(), static_cast<Csm::csmSizeInt>(bytes.size()));
-            }
-        }
+        _home = directory;
+        loadExpressions();
+        loadEffects();
+        loadIdleMotions();
+        // Every updater must be registered before this call; the scheduler runs
+        // them in the order Cubism requires rather than the order we added them.
+        _updateScheduler.SortUpdatableList();
         _model->SaveParameters();
         return true;
     }
 
+    /// Mirrors the SDK sample's Update: motion drives parameters, the scheduler
+    /// then applies eye blink, expression, breath, physics and pose.
     void advance(float seconds) {
         if (_model == nullptr) {
             return;
         }
+        _motionUpdated = false;
         _model->LoadParameters();
-        if (_motionManager != nullptr) {
-            _motionManager->UpdateMotion(_model, seconds);
+        if (_motionManager == nullptr || _motionManager->IsFinished()) {
+            startRandomIdleMotion();
+        } else {
+            _motionUpdated = _motionManager->UpdateMotion(_model, seconds);
         }
         _model->SaveParameters();
-        if (_physics != nullptr) {
-            _physics->Evaluate(_model, seconds);
-        }
-        if (_pose != nullptr) {
-            _pose->UpdateParameters(_model, seconds);
-        }
+        _updateScheduler.OnLateUpdate(_model, seconds);
         _model->Update();
     }
 
+    Csm::csmInt32 idleMotionCount() const { return _idleMotionCount; }
+    bool hasEyeBlink() const { return _eyeBlink != nullptr; }
+    bool hasBreath() const { return _breath != nullptr; }
+    bool hasPhysics() const { return _physics != nullptr; }
+    bool hasPose() const { return _pose != nullptr; }
+    Csm::csmInt32 expressionCount() const { return static_cast<Csm::csmInt32>(_expressions.GetSize()); }
+
+private:
+    void loadExpressions() {
+        const Csm::csmInt32 count = _setting->GetExpressionCount();
+        for (Csm::csmInt32 index = 0; index < count; ++index) {
+            const Csm::csmChar *file = _setting->GetExpressionFileName(index);
+            if (file == nullptr || strlen(file) == 0) {
+                continue;
+            }
+            std::vector<unsigned char> bytes;
+            if (!readFile(_home + "/" + file, bytes)) {
+                continue;
+            }
+            Csm::ACubismMotion *motion = LoadExpression(
+                bytes.data(), static_cast<Csm::csmSizeInt>(bytes.size()),
+                _setting->GetExpressionName(index));
+            if (motion != nullptr) {
+                _expressions.PushBack(motion);
+            }
+        }
+        if (_expressionManager != nullptr) {
+            _updateScheduler.AddUpdatableList(CSM_NEW Csm::CubismExpressionUpdater(*_expressionManager));
+        }
+    }
+
+    void loadEffects() {
+        const Csm::csmChar *physics = _setting->GetPhysicsFileName();
+        if (physics != nullptr && strlen(physics) > 0) {
+            std::vector<unsigned char> bytes;
+            if (readFile(_home + "/" + physics, bytes)) {
+                LoadPhysics(bytes.data(), static_cast<Csm::csmSizeInt>(bytes.size()));
+            }
+            if (_physics != nullptr) {
+                _updateScheduler.AddUpdatableList(CSM_NEW Csm::CubismPhysicsUpdater(*_physics));
+            }
+        }
+
+        const Csm::csmChar *pose = _setting->GetPoseFileName();
+        if (pose != nullptr && strlen(pose) > 0) {
+            std::vector<unsigned char> bytes;
+            if (readFile(_home + "/" + pose, bytes)) {
+                LoadPose(bytes.data(), static_cast<Csm::csmSizeInt>(bytes.size()));
+            }
+            if (_pose != nullptr) {
+                _updateScheduler.AddUpdatableList(CSM_NEW Csm::CubismPoseUpdater(*_pose));
+            }
+        }
+
+        if (_setting->GetEyeBlinkParameterCount() > 0) {
+            _eyeBlink = Csm::CubismEyeBlink::Create(_setting);
+            if (_eyeBlink != nullptr) {
+                // The updater reads _motionUpdated so an explicit motion that
+                // animates the eyes suppresses automatic blinking.
+                _updateScheduler.AddUpdatableList(
+                    CSM_NEW Csm::CubismEyeBlinkUpdater(_motionUpdated, *_eyeBlink));
+            }
+        }
+        for (Csm::csmInt32 i = 0; i < _setting->GetEyeBlinkParameterCount(); ++i) {
+            _eyeBlinkIds.PushBack(_setting->GetEyeBlinkParameterId(i));
+        }
+        for (Csm::csmInt32 i = 0; i < _setting->GetLipSyncParameterCount(); ++i) {
+            _lipSyncIds.PushBack(_setting->GetLipSyncParameterId(i));
+        }
+
+        _breath = Csm::CubismBreath::Create();
+        if (_breath != nullptr) {
+            auto *ids = Csm::CubismFramework::GetIdManager();
+            Csm::csmVector<Csm::CubismBreath::BreathParameterData> parameters;
+            parameters.PushBack(Csm::CubismBreath::BreathParameterData(
+                ids->GetId(Csm::DefaultParameterId::ParamAngleX), 0.0f, 15.0f, 6.5345f, 0.5f));
+            parameters.PushBack(Csm::CubismBreath::BreathParameterData(
+                ids->GetId(Csm::DefaultParameterId::ParamAngleY), 0.0f, 8.0f, 3.5345f, 0.5f));
+            parameters.PushBack(Csm::CubismBreath::BreathParameterData(
+                ids->GetId(Csm::DefaultParameterId::ParamAngleZ), 0.0f, 10.0f, 5.5345f, 0.5f));
+            parameters.PushBack(Csm::CubismBreath::BreathParameterData(
+                ids->GetId(Csm::DefaultParameterId::ParamBodyAngleX), 0.0f, 4.0f, 15.5345f, 0.5f));
+            parameters.PushBack(Csm::CubismBreath::BreathParameterData(
+                ids->GetId(Csm::DefaultParameterId::ParamBreath), 0.5f, 0.5f, 3.2345f, 0.5f));
+            _breath->SetParameters(parameters);
+            _updateScheduler.AddUpdatableList(CSM_NEW Csm::CubismBreathUpdater(*_breath));
+        }
+    }
+
+    void loadIdleMotions() {
+        _idleGroup = _setting->GetMotionGroupName(0) == nullptr ? "Idle" : "Idle";
+        _idleMotionCount = _setting->GetMotionCount(_idleGroup.c_str());
+        if (_idleMotionCount <= 0) {
+            // Some models name the waiting group differently; fall back to the
+            // first declared group so the character still moves.
+            const Csm::csmChar *first = _setting->GetMotionGroupName(0);
+            if (first != nullptr && strlen(first) > 0) {
+                _idleGroup = first;
+                _idleMotionCount = _setting->GetMotionCount(_idleGroup.c_str());
+            }
+        }
+    }
+
+    Csm::CubismMotion *idleMotion(Csm::csmInt32 index) {
+        const Csm::csmChar *file = _setting->GetMotionFileName(_idleGroup.c_str(), index);
+        if (file == nullptr || strlen(file) == 0) {
+            return nullptr;
+        }
+        const std::string key = _idleGroup + "_" + std::to_string(index);
+        auto cached = _motions.find(key);
+        if (cached != _motions.end()) {
+            return cached->second;
+        }
+        std::vector<unsigned char> bytes;
+        if (!readFile(_home + "/" + file, bytes)) {
+            return nullptr;
+        }
+        auto *motion = static_cast<Csm::CubismMotion *>(
+            LoadMotion(bytes.data(), static_cast<Csm::csmSizeInt>(bytes.size()), nullptr));
+        if (motion == nullptr) {
+            return nullptr;
+        }
+        // Effect ids let a motion cooperate with automatic blink and lip sync
+        // instead of fighting them.
+        motion->SetEffectIds(_eyeBlinkIds, _lipSyncIds);
+        const Csm::csmFloat32 fade = _setting->GetMotionFadeInTimeValue(_idleGroup.c_str(), index);
+        if (fade >= 0.0f) { motion->SetFadeInTime(fade); }
+        const Csm::csmFloat32 fadeOut = _setting->GetMotionFadeOutTimeValue(_idleGroup.c_str(), index);
+        if (fadeOut >= 0.0f) { motion->SetFadeOutTime(fadeOut); }
+        _motions[key] = motion;
+        return motion;
+    }
+
+    void startRandomIdleMotion() {
+        if (_idleMotionCount <= 0 || _motionManager == nullptr) {
+            return;
+        }
+        // Deterministic rotation rather than rand(): a repeatable idle sequence
+        // is easier to inspect and cannot surprise a test.
+        const Csm::csmInt32 index = _nextIdle % _idleMotionCount;
+        _nextIdle = (_nextIdle + 1) % (_idleMotionCount == 0 ? 1 : _idleMotionCount);
+        Csm::CubismMotion *motion = idleMotion(index);
+        if (motion != nullptr) {
+            _motionManager->StartMotionPriority(motion, false, 1);
+        }
+    }
+
+public:
     Csm::CubismModel *model() const { return _model; }
 
     Csm::csmInt32 textureCount() const {
@@ -165,19 +313,36 @@ public:
     }
 
     ~JoiModel() override {
+        for (auto &entry : _motions) {
+            Csm::ACubismMotion::Delete(entry.second);
+        }
+        _motions.clear();
+        for (Csm::csmUint32 i = 0; i < _expressions.GetSize(); ++i) {
+            Csm::ACubismMotion::Delete(_expressions[i]);
+        }
+        _expressions.Clear();
         delete _setting;
         _setting = nullptr;
     }
 
 private:
     Csm::ICubismModelSetting *_setting = nullptr;
+    std::string _home;
+    std::string _idleGroup = "Idle";
+    Csm::csmInt32 _idleMotionCount = 0;
+    Csm::csmInt32 _nextIdle = 0;
+    Csm::csmBool _motionUpdated = false;
+    std::map<std::string, Csm::CubismMotion *> _motions;
+    Csm::csmVector<Csm::ACubismMotion *> _expressions;
+    Csm::csmVector<Csm::CubismIdHandle> _eyeBlinkIds;
+    Csm::csmVector<Csm::CubismIdHandle> _lipSyncIds;
 };
 
 }  // namespace
 
 @implementation JoiLive2DModelFacts
 
-- (instancetype)initWithModel:(Csm::CubismModel *)model {
+- (instancetype)initWithModel:(Csm::CubismModel *)model owner:(JoiModel *)owner {
     self = [super init];
     if (self != nil) {
         _canvasWidth = model->GetCanvasWidth();
@@ -186,6 +351,12 @@ private:
         _parameterCount = model->GetParameterCount();
         _partCount = model->GetPartCount();
         _drawableCount = model->GetDrawableCount();
+        _idleMotionCount = owner->idleMotionCount();
+        _expressionCount = owner->expressionCount();
+        _hasEyeBlink = owner->hasEyeBlink() ? YES : NO;
+        _hasBreath = owner->hasBreath() ? YES : NO;
+        _hasPhysics = owner->hasPhysics() ? YES : NO;
+        _hasPose = owner->hasPose() ? YES : NO;
     }
     return self;
 }
@@ -252,7 +423,7 @@ private:
     if (_model == nullptr || _model->model() == nullptr) {
         return [[JoiLive2DModelFacts alloc] init];
     }
-    return [[JoiLive2DModelFacts alloc] initWithModel:_model->model()];
+    return [[JoiLive2DModelFacts alloc] initWithModel:_model->model() owner:_model];
 }
 
 - (void)updateWithDelta:(NSTimeInterval)seconds {
