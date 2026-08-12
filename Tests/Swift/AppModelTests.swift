@@ -106,6 +106,76 @@ final class AppModelTests: XCTestCase {
         }
     }
 
+    func testActivationPublishesInstallerIssuedContentAccessForTheStage() async throws {
+        let fixture = try AppCharacterFixture()
+        defer { fixture.cleanup() }
+        let installer = CharacterPackageInstaller(root: fixture.store)
+        let model = AppModel(installer: installer)
+        XCTAssertNil(model.stageContent, "nothing is activated at launch")
+
+        await model.previewCharacter(at: fixture.archive)
+        model.startInstall()
+        guard let installed = try await waitForInstalledState(model) else {
+            return XCTFail("Expected durable installed state")
+        }
+        model.startActivation(installed)
+        let published = try await waitUntil { model.stageContent != nil }
+        XCTAssertTrue(published)
+
+        let access = try XCTUnwrap(model.stageContent)
+        // The stage must draw the character the session actually holds.
+        let session = await model.companionSession.current()
+        XCTAssertEqual(access.installationID, session.selection.installationID)
+        XCTAssertEqual(access.contentID, session.selection.contentID)
+        XCTAssertEqual(access.displayName, model.currentCharacterName)
+        // Entry path comes from the verified manifest, not from a guess, and the
+        // file it names must actually be readable inside the sealed tree.
+        XCTAssertEqual(access.entryPath, "portrait.png")
+        XCTAssertEqual(access.renderer, .static)
+        XCTAssertTrue(FileManager.default.isReadableFile(atPath: access.entryURL.path))
+    }
+
+    func testContentAccessIsRefusedForAStaleHandleAndClearedOnRemoval() async throws {
+        let fixture = try AppCharacterFixture()
+        defer { fixture.cleanup() }
+        let installer = CharacterPackageInstaller(root: fixture.store)
+        let model = AppModel(installer: installer)
+        await model.previewCharacter(at: fixture.archive)
+        model.startInstall()
+        guard let installed = try await waitForInstalledState(model) else {
+            return XCTFail("Expected durable installed state")
+        }
+
+        // A handle whose lease was released must not still yield a content root.
+        let handle = try await installer.prepareActivation(installed.installationID)
+        await installer.releaseActivation(handle)
+        do {
+            _ = try await installer.contentAccess(for: handle)
+            XCTFail("A released handle must not yield content access")
+        } catch let failure as CharacterPackageImportFailure {
+            XCTAssertEqual(failure.code, .staleHandle)
+        }
+
+        model.startActivation(installed)
+        let published = try await waitUntil { model.stageContent != nil }
+        XCTAssertTrue(published)
+        // Switching away then removing must leave no stage content behind.
+        model.startRemoval(
+            CharacterPackageCatalogEntry(
+                installationID: installed.installationID,
+                contentID: installed.contentID,
+                characterID: installed.manifest.characterID,
+                displayName: installed.manifest.displayName,
+                renderer: installed.manifest.renderer,
+                available: true,
+                activationAllowed: true
+            )
+        )
+        // Removal of the active character is refused, so the stage keeps drawing.
+        _ = try await waitUntil { if case .failed = model.characterLibraryState { true } else { false } }
+        XCTAssertNotNil(model.stageContent)
+    }
+
     func testActiveRemovalIsBlockedAndInactiveDuplicateCanBeRemoved() async throws {
         let fixture = try AppCharacterFixture()
         defer { fixture.cleanup() }

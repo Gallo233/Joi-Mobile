@@ -14,7 +14,8 @@ struct ChatStageView: View {
         ZStack {
             CharacterStageView(
                 framing: model.stageFraming,
-                isResponding: model.chatTurnState.isPending
+                isResponding: model.chatTurnState.isPending,
+                stageContent: model.stageContent
             )
             .ignoresSafeArea()
 

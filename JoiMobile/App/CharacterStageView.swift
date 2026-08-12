@@ -1,3 +1,4 @@
+import CharacterRuntime
 import CompanionCore
 import SwiftUI
 
@@ -48,7 +49,14 @@ enum StageFraming: String, CaseIterable, Sendable {
 struct CharacterStageView: View {
     let framing: StageFraming
     let isResponding: Bool
+    /// The activated character's content, when one is active. This is the product
+    /// path; a developer fixture is only consulted when nothing is activated.
+    var stageContent: CharacterContentAccess?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Set when a native runtime was expected but could not present the model.
+    /// The stage then shows the static fallback, never a blank or half-drawn
+    /// character.
+    @State private var nativeUnavailable = false
 
     var body: some View {
         ZStack {
@@ -63,10 +71,7 @@ struct CharacterStageView: View {
             )
             .ignoresSafeArea()
 
-            StaticCharacterPlaceholder(isResponding: isResponding, reduceMotion: reduceMotion)
-                .scaleEffect(framing.scale, anchor: framing.anchor)
-                .animation(reduceMotion ? nil : .snappy(duration: 0.35), value: framing)
-                .clipped()
+            characterContent
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
@@ -75,6 +80,52 @@ struct CharacterStageView: View {
                 : String(localized: "角色舞台，空闲")
         )
         .accessibilityValue(framing.label)
+    }
+
+    /// A native model is presented only when this build admitted the runtime and
+    /// a model was explicitly supplied. Every Live2D name stays inside the
+    /// conditional so the default build has no such symbol at all.
+    @ViewBuilder private var characterContent: some View {
+        #if JOI_LIVE2D
+        if !nativeUnavailable, let live2d = liveModelSource {
+            Live2DStageSurface(
+                fixture: live2d,
+                framing: framing,
+                onUnavailable: { nativeUnavailable = true }
+            )
+            // Keyed by content so activating a different character rebuilds the
+            // surface rather than reusing a coordinator bound to the old model.
+            .id(live2d.directory + "/" + live2d.model3)
+            .ignoresSafeArea()
+        } else {
+            staticPlaceholder
+        }
+        #else
+        staticPlaceholder
+        #endif
+    }
+
+    #if JOI_LIVE2D
+    /// The activated character wins. Only a `live2d` package can drive the native
+    /// surface; a `static` or `vrm` package correctly falls through to the
+    /// placeholder rather than being fed to the wrong runtime.
+    private var liveModelSource: Live2DDevFixture? {
+        if let stageContent {
+            guard stageContent.renderer == .live2d else { return nil }
+            return Live2DDevFixture(
+                directory: stageContent.root.path,
+                model3: stageContent.entryPath
+            )
+        }
+        return Live2DDevFixture.fromEnvironment
+    }
+    #endif
+
+    private var staticPlaceholder: some View {
+        StaticCharacterPlaceholder(isResponding: isResponding, reduceMotion: reduceMotion)
+            .scaleEffect(framing.scale, anchor: framing.anchor)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.35), value: framing)
+            .clipped()
     }
 }
 

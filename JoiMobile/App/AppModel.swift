@@ -64,6 +64,12 @@ final class AppModel {
     var stageFraming: StageFraming = .fullBody
     var isTranscriptPresented = false
 
+    /// Read access to the currently activated character's sealed content, issued
+    /// by the installer. Set only after a successful `CompanionSessionStore` CAS,
+    /// and cleared when the character is deactivated or removed, so the stage can
+    /// never outlive the activation it is drawing.
+    private(set) var stageContent: CharacterContentAccess?
+
     /// Composer text. Editable draft only; never a transcript line.
     var chatDraft: String = ""
     /// App projection of the session store's accepted transcript ordering.
@@ -418,6 +424,9 @@ final class AppModel {
             activeRuntimeResource = acquired
             acquired = nil
             sessionSelection = (await companionSession.current()).selection
+            // Read access is issued after the CAS, from the handle that just won
+            // it, so the stage draws the character the session actually holds.
+            stageContent = try? await installer.contentAccess(for: handle)
             if isCurrent(generation) {
                 characterLibraryState = .installed(result)
             }
@@ -442,6 +451,9 @@ final class AppModel {
                 return
             }
             try await installer.remove(entry.installationID)
+            if stageContent?.installationID == entry.installationID {
+                stageContent = nil
+            }
             guard isCurrent(generation) else { return }
             await refreshInstalledCharacters(ifCurrent: generation)
             guard isCurrent(generation) else { return }

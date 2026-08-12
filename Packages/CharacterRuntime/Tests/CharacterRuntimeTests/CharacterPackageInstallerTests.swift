@@ -733,10 +733,75 @@ final class CharacterPackageInstallerTests: XCTestCase {
         let fixture = try Fixture()
         defer { fixture.cleanup() }
         let archive = fixture.file("private-live2d.zip", storedZip(entries.sorted { $0.name < $1.name }))
-        let preview = try await CharacterPackageInstaller(root: fixture.directory("store")).preview(.live2DArchive(archive))
+        let store = fixture.directory("store")
+        let installer = CharacterPackageInstaller(root: store)
+        let preview = try await installer.preview(.live2DArchive(archive))
         XCTAssertEqual(preview.manifest.renderer, .live2d)
         XCTAssertEqual(preview.manifest.assets.count, entries.count)
         XCTAssertTrue(preview.manifest.assets.contains { $0.path.hasSuffix(".cdi3.json") })
+
+        // The stage renders from the installer-issued entry path, so a real
+        // import must name the model3 graph and that file must be readable
+        // inside the sealed tree. Without this the render link is unproven.
+        let installed = try await installer.install(.live2DArchive(archive))
+        XCTAssertEqual(installed.manifest.renderer, .live2d)
+        XCTAssertTrue(
+            installed.manifest.entryPath.hasSuffix(".model3.json"),
+            "entry must be the model3 graph, got \(installed.manifest.entryPath)"
+        )
+        // A bare Live2D ZIP carries no provenance, so it stays quarantined and
+        // cannot be activated or yield a content root. This is the J1B rule, not
+        // a defect: the render link is only reachable for rights-cleared
+        // packages, and confirming rights is G5 work.
+        XCTAssertEqual(installed.disposition, .quarantined)
+        await XCTAssertThrowsPackageFailure(.rightsUnverified) {
+            _ = try await installer.prepareActivation(installed.installationID)
+        }
+    }
+
+    /// The render link itself, proven on a rights-cleared canonical Live2D
+    /// package: activation yields a root whose entry is the model3 graph and
+    /// whose declared assets all resolve inside the sealed tree.
+    func testActivationYieldsAReadableLive2DEntryForRightsClearedPackages() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let moc = Data([0x4D, 0x4F, 0x43, 0x33] + Array(repeating: 0, count: 64))
+        let model3 = try JSONSerialization.data(withJSONObject: [
+            "Version": 3,
+            "FileReferences": ["Moc": "hiyori.moc3", "Textures": ["texture_00.png"]],
+        ], options: [.sortedKeys])
+        let archive = fixture.file("cleared.joi-character", storedZip([
+            .file("manifest.json", canonicalLive2DManifest(
+                entryPath: "hiyori.model3.json",
+                assets: [
+                    ("hiyori.model3.json", "application/json", model3),
+                    ("hiyori.moc3", "application/vnd.live2d.moc3", moc),
+                    ("texture_00.png", "image/png", validPNG),
+                ]
+            )),
+            .file("hiyori.model3.json", model3),
+            .file("hiyori.moc3", moc),
+            .file("texture_00.png", validPNG),
+        ]))
+        let store = fixture.directory("store")
+        let installer = CharacterPackageInstaller(root: store)
+        let installed = try await installer.install(.joiCharacterArchive(archive))
+        XCTAssertNil(installed.disposition, "a rights-cleared package is not quarantined")
+
+        let handle = try await installer.prepareActivation(installed.installationID)
+        let access = try await installer.contentAccess(for: handle)
+        XCTAssertEqual(access.renderer, .live2d)
+        XCTAssertEqual(access.entryPath, "hiyori.model3.json")
+        XCTAssertTrue(FileManager.default.isReadableFile(atPath: access.entryURL.path))
+        for asset in installed.manifest.assets {
+            XCTAssertTrue(
+                FileManager.default.isReadableFile(
+                    atPath: access.root.appendingPathComponent(asset.path).path
+                ),
+                "declared asset unreadable: \(asset.path)"
+            )
+        }
+        await installer.releaseActivation(handle)
     }
 }
 
@@ -852,6 +917,21 @@ private func canonicalStaticObject() -> [String: Any] {
 }
 
 private func canonicalStaticManifest() -> Data { json(canonicalStaticObject()) }
+
+/// A canonical Live2D manifest with declared provenance, so the package is
+/// rights-cleared and may be activated rather than quarantined.
+private func canonicalLive2DManifest(
+    entryPath: String,
+    assets: [(String, String, Data)]
+) -> Data {
+    json([
+        "schema": "joi.character.v1", "packageID": "fixture.live2d", "characterID": "fixture.hiyori",
+        "version": "1.0.0", "displayName": "Fixture Live2D", "renderer": "live2d",
+        "entryPath": entryPath, "locales": ["zh-Hans"],
+        "assets": assets.map { ["path": $0.0, "mediaType": $0.1, "sha256": sha($0.2)] },
+        "provenance": ["author": "Test", "license": "Self-authored test fixture"],
+    ])
+}
 
 private func legacyObject() -> [String: Any] {
     [

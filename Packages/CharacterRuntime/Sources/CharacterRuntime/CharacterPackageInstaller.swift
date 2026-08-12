@@ -162,8 +162,49 @@ public struct CharacterPackageCatalogEntry: Codable, Equatable, Sendable {
     }
 }
 
-/// Filesystem-backed installer. Asset roots are never exposed; the only
-/// runtime capability is a freshly revalidated handle from prepareActivation.
+/// Read access to one installed character's sealed content, issued by the
+/// installer only after it has revalidated the lease and the tree.
+///
+/// A renderer has to read real files, so some root must reach it. Handing it out
+/// is therefore deliberate rather than an oversight: what the boundary actually
+/// buys is that this value cannot be constructed by a consumer, is refused for a
+/// stale, removed or mutated installation, and names the entry file from the
+/// verified manifest instead of letting a caller guess a path.
+public struct CharacterContentAccess: Equatable, Sendable {
+    public let installationID: CharacterInstallationID
+    public let contentID: CharacterContentID
+    public let renderer: CharacterRendererKind
+    /// Absolute root of the sealed, read-only content tree.
+    public let root: URL
+    /// Manifest-declared entry file, relative to `root`.
+    public let entryPath: String
+    public let displayName: String
+
+    @_spi(CharacterPackageInstaller)
+    public init(
+        installationID: CharacterInstallationID,
+        contentID: CharacterContentID,
+        renderer: CharacterRendererKind,
+        root: URL,
+        entryPath: String,
+        displayName: String
+    ) {
+        self.installationID = installationID
+        self.contentID = contentID
+        self.renderer = renderer
+        self.root = root
+        self.entryPath = entryPath
+        self.displayName = displayName
+    }
+
+    /// Absolute URL of the entry file.
+    public var entryURL: URL {
+        root.appendingPathComponent(entryPath)
+    }
+}
+
+/// Filesystem-backed installer. Content roots reach a renderer only through
+/// `contentAccess(for:)`, which revalidates first.
 public actor CharacterPackageInstaller {
     private let root: URL
     private let paths: CharacterStorePaths
@@ -412,6 +453,30 @@ public actor CharacterPackageInstaller {
         records[updated.installationID] = updated
         try? CharacterContentStore.persist(updated, paths: paths)
         activationLeases.removeValue(forKey: updated.installationID)
+    }
+
+    /// Issues read access for a live handle. This revalidates exactly as
+    /// `validateActivation` does, so a stale, removed or mutated installation
+    /// cannot yield a root, and the entry path comes from the verified manifest.
+    public func contentAccess(
+        for handle: ValidatedCharacterPackageHandle
+    ) throws -> CharacterContentAccess {
+        try validateActivation(handle)
+        guard let record = records[handle.installationID] else {
+            throw CharacterPackageImportFailure(.notFound, .activation)
+        }
+        guard record.activationAllowed else {
+            throw CharacterPackageImportFailure(.rightsUnverified, .activation, .quarantined)
+        }
+        let root = try paths.assetRoot(record.contentID)
+        return CharacterContentAccess(
+            installationID: handle.installationID,
+            contentID: record.contentID,
+            renderer: record.manifest.renderer,
+            root: root,
+            entryPath: record.manifest.entryPath,
+            displayName: record.manifest.displayName
+        )
     }
 
     public func releaseActivation(_ handle: ValidatedCharacterPackageHandle) {
