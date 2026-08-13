@@ -71,8 +71,17 @@ struct CharacterLibraryView: View {
                 HStack { VStack(alignment: .leading) { Text(entry.displayName); Text(entry.renderer.rawValue).font(.caption).foregroundStyle(.secondary) }; Spacer()
                     if entry.installationID == model.sessionSelection.installationID {
                         Text("当前角色").font(.caption).foregroundStyle(.secondary)
+                    } else if !entry.activationAllowed {
+                        // Quarantined content has no activation action at all.
+                        Text("权利待确认").font(.caption).foregroundStyle(.secondary)
+                        Button("移除", role: .destructive) { model.startRemoval(entry) }
+                    } else if !entry.available {
+                        Text("需要重新导入").font(.caption).foregroundStyle(.orange)
+                        Button("移除", role: .destructive) { model.startRemoval(entry) }
                     } else {
-                        if !entry.activationAllowed { Text("权利待确认").font(.caption).foregroundStyle(.secondary) }
+                        // Without this an installed character could only be
+                        // activated in the session it was imported.
+                        Button("设为当前") { model.startActivation(entry) }
                         Button("移除", role: .destructive) { model.startRemoval(entry) }
                     }
                 }
@@ -81,5 +90,15 @@ struct CharacterLibraryView: View {
         }
     }
 
-    private var allowedContentTypes: [UTType] { [UTType(filenameExtension: "joi-character") ?? .archive, UTType(filenameExtension: "vrm") ?? .data, .zip] }
+    /// `.joi-character` is an exported type of this app, so it resolves by
+    /// identifier. Falling back to `.archive` would leave the file unselectable,
+    /// because an unregistered extension does not conform to it.
+    private var allowedContentTypes: [UTType] {
+        [
+            UTType("com.joi.character-package"),
+            UTType(filenameExtension: "joi-character"),
+            UTType(filenameExtension: "vrm"),
+            .zip,
+        ].compactMap { $0 }
+    }
 }

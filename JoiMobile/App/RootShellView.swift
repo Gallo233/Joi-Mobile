@@ -38,6 +38,7 @@ struct RootShellView: View {
             .padding(.bottom, 10)
         }
         .background(Color(.systemGroupedBackground))
+        .task { await model.restoreActiveCharacter() }
         .sheet(isPresented: $model.isCharacterLibraryPresented) {
             CharacterLibraryView(model: model)
         }

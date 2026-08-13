@@ -50,6 +50,25 @@ targets:
         NSLocationWhenInUseUsageDescription: 仅在可见的文化步行或地点请求中，Joi 才会使用你的位置。
         NSCameraUsageDescription: 仅在你主动使用“看见就问”时，Joi 才会使用相机。
         NSPhotoLibraryUsageDescription: Joi 只会读取你为地点提问主动选择的照片。
+        # Character packages are user-owned files, so the app both declares the
+        # type it can open and exposes its own folder. Without the declaration a
+        # `.joi-character` file is not selectable in the document picker at all.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.joi.character-package
+            UTTypeDescription: Joi 角色包
+            UTTypeConformsTo:
+              - public.zip-archive
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - joi-character
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Joi 角色包
+            LSHandlerRank: Owner
+            CFBundleTypeRole: Viewer
+            LSItemContentTypes:
+              - com.joi.character-package
         # Local development only: permits http://127.0.0.1 so Backend/mock_server.py
         # can serve the chat contract. Arbitrary loads stay forbidden, so every
         # non-loopback host must still be HTTPS.

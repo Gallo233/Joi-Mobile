@@ -147,6 +147,25 @@ final class AppModel {
         chatTranscript.last { $0.author == .companion }
     }
 
+    static let activeCharacterKey = "joi.character.active"
+
+    /// Reactivates the character the user last chose. The identifier alone is
+    /// remembered; the installer revalidates the sealed tree and issues a fresh
+    /// lease before anything is drawn, so a mutated or removed installation
+    /// falls back rather than being restored blindly.
+    func restoreActiveCharacter() async {
+        await refreshInstalledCharacters()
+        guard let raw = UserDefaults.standard.string(forKey: Self.activeCharacterKey) else { return }
+        let wanted = CharacterInstallationID(rawValue: raw)
+        guard let entry = installedCharacters.first(where: {
+            $0.installationID == wanted && $0.available && $0.activationAllowed
+        }) else {
+            UserDefaults.standard.removeObject(forKey: Self.activeCharacterKey)
+            return
+        }
+        startActivation(entry)
+    }
+
     func toggleStageFraming() { stageFraming = stageFraming.next }
     func presentTranscript() { isTranscriptPresented = true }
     func dismissTranscript() { isTranscriptPresented = false }
@@ -342,10 +361,37 @@ final class AppModel {
     }
 
     func startActivation(_ result: CharacterPackageInstallResult) {
+        startActivation(
+            installationID: result.installationID,
+            selection: CharacterSelection(
+                characterID: result.manifest.characterID,
+                displayName: result.manifest.displayName,
+                installationID: result.installationID,
+                contentID: result.contentID
+            )
+        )
+    }
+
+    /// Activates an already-installed character. Without this a character could
+    /// only be activated in the same session it was imported, so a restart left
+    /// the catalog unusable.
+    func startActivation(_ entry: CharacterPackageCatalogEntry) {
+        startActivation(
+            installationID: entry.installationID,
+            selection: CharacterSelection(
+                characterID: entry.characterID,
+                displayName: entry.displayName,
+                installationID: entry.installationID,
+                contentID: entry.contentID
+            )
+        )
+    }
+
+    private func startActivation(installationID: CharacterInstallationID, selection: CharacterSelection) {
         let generation = beginOperation()
-        characterLibraryState = .activating(result.installationID)
+        characterLibraryState = .activating(installationID)
         operationTask = Task { [weak self] in
-            await self?.activate(result, generation: generation)
+            await self?.activate(installationID: installationID, selection: selection, generation: generation)
         }
     }
 
@@ -411,12 +457,16 @@ final class AppModel {
         installedCharacters = entries
     }
 
-    private func activate(_ result: CharacterPackageInstallResult, generation: Int) async {
+    private func activate(
+        installationID: CharacterInstallationID,
+        selection: CharacterSelection,
+        generation: Int
+    ) async {
         var acquired: ActiveRuntimeResource?
         do {
             try Task.checkCancellation()
             let expected = await companionSession.current()
-            let handle = try await installer.prepareActivation(result.installationID)
+            let handle = try await installer.prepareActivation(installationID)
             let rendererGeneration = RendererGeneration()
             acquired = ActiveRuntimeResource(handle: handle, generation: rendererGeneration)
             try Task.checkCancellation()
@@ -424,12 +474,6 @@ final class AppModel {
             try Task.checkCancellation()
             try await installer.validateActivation(handle)
             try Task.checkCancellation()
-            let selection = CharacterSelection(
-                characterID: result.manifest.characterID,
-                displayName: result.manifest.displayName,
-                installationID: result.installationID,
-                contentID: result.contentID
-            )
             guard isCurrent(generation), await companionSession.activate(selection: selection, expecting: expected.selection) else {
                 if let acquired { await releaseActivationResource(acquired) }
                 setState(.failed(message: String(localized: "角色已在其他操作中切换；当前会话保持不变。")), ifCurrent: generation)
@@ -444,9 +488,14 @@ final class AppModel {
             // Read access is issued after the CAS, from the handle that just won
             // it, so the stage draws the character the session actually holds.
             stageContent = try? await installer.contentAccess(for: handle)
+            // Remembered so the companion the user was talking to is still there
+            // after a restart. Only the identifier is stored; the installer
+            // revalidates it on the next launch before anything is drawn.
+            UserDefaults.standard.set(installationID.rawValue, forKey: Self.activeCharacterKey)
             if isCurrent(generation) {
-                characterLibraryState = .installed(result)
+                characterLibraryState = .idle
             }
+            await refreshInstalledCharacters(ifCurrent: generation)
             if let previous { await releaseActivationResource(previous) }
             // This label is intentionally conservative: the App-owned renderer
             // only establishes C1/C2 fallback, never native success.
@@ -470,6 +519,9 @@ final class AppModel {
             try await installer.remove(entry.installationID)
             if stageContent?.installationID == entry.installationID {
                 stageContent = nil
+            }
+            if UserDefaults.standard.string(forKey: Self.activeCharacterKey) == entry.installationID.rawValue {
+                UserDefaults.standard.removeObject(forKey: Self.activeCharacterKey)
             }
             guard isCurrent(generation) else { return }
             await refreshInstalledCharacters(ifCurrent: generation)
