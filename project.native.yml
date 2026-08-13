@@ -1,0 +1,32 @@
+# Native character runtimes: Live2D *and* VRM.
+#
+# The specs form a ladder, so each rung stays independently buildable:
+#
+#   project.yml         no vendor runtime at all; static fallback only
+#   project.live2d.yml  adds Cubism Native
+#   project.native.yml  adds VRMMetalKit on top of Live2D   <- this file
+#
+# The product needs both runtimes, so this is the spec a real build uses. Run
+# both setup scripts first:
+#
+#   Tools/setup_live2d.sh <cubism sdk path>
+#   Tools/setup_vrm.sh <VRMMetalKit zip>
+#   xcodegen generate --spec project.native.yml
+include:
+  - project.live2d.yml
+packages:
+  VRMMetalKit:
+    path: Vendor/VRMMetalKit
+targets:
+  JoiMobile:
+    sources:
+      - path: VRM
+        name: VRMBridge
+    settings:
+      base:
+        OTHER_SWIFT_FLAGS:
+          - $(inherited)
+          - -DJOI_VRM
+    dependencies:
+      - package: VRMMetalKit
+        product: VRMMetalKit

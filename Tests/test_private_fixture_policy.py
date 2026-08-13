@@ -130,11 +130,34 @@ class PrivateCharacterFixturePolicyTests(unittest.TestCase):
         # Cubism's Metal renderer uses manual reference counting.
         self.assertIn("-fno-objc-arc", live2d)
 
+    def test_native_runtimes_are_a_spec_ladder_each_rung_buildable(self) -> None:
+        """project.yml → live2d → native. Each rung must stay independently
+        buildable, so a clone with no SDK at all still ships static fallback."""
+        default = (ROOT / "project.yml").read_text(encoding="utf-8")
+        for token in ("Live2D", "Cubism", "VRMMetalKit", "Vendor/"):
+            self.assertNotIn(token, default)
+        live2d = (ROOT / "project.live2d.yml").read_text(encoding="utf-8")
+        self.assertIn("project.yml", live2d)
+        self.assertNotIn("VRMMetalKit", live2d, "Live2D rung must not require VRM")
+        native = (ROOT / "project.native.yml").read_text(encoding="utf-8")
+        self.assertIn("project.live2d.yml", native)
+        self.assertIn("VRMMetalKit", native)
+
+    def test_vrm_runtime_is_attributed_and_pinned(self) -> None:
+        """Apache-2.0 requires attribution, and an unpinned revision would mean
+        a different library could build tomorrow under the same review."""
+        revision = "8d87fd565c7629881cea980752c9d5518a504c7d"
+        notices = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
+        self.assertIn("VRMMetalKit", notices)
+        self.assertIn("Apache License 2.0", notices)
+        self.assertIn(revision, notices)
+        self.assertIn(revision, (ROOT / "Tools/setup_vrm.sh").read_text(encoding="utf-8"))
+
     def test_character_runtime_still_has_no_native_runtime_dependency(self) -> None:
         """The J1B boundary is unchanged: the bridge lives in the App target, so
         CharacterRuntime and its tests stay free of any vendor runtime."""
         manifest = (ROOT / "Packages/CharacterRuntime/Package.swift").read_text(encoding="utf-8")
-        for token in ("Cubism", "Live2DCubismCore", "Vendor"):
+        for token in ("Cubism", "Live2DCubismCore", "VRMMetalKit", "Vendor"):
             self.assertNotIn(token, manifest)
 
     def test_chinese_character_library_copy_remains_in_editable_catalog(self) -> None:

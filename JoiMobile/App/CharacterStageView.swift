@@ -88,6 +88,26 @@ struct CharacterStageView: View {
     /// a model was explicitly supplied. Every Live2D name stays inside the
     /// conditional so the default build has no such symbol at all.
     @ViewBuilder private var characterContent: some View {
+        #if JOI_VRM
+        if !nativeUnavailable, let vrm = stageContent, vrm.renderer == .vrm {
+            VRMStageSurface(
+                entryURL: vrm.entryURL,
+                framing: framing,
+                onUnavailable: { nativeUnavailable = true }
+            )
+            .id(vrm.contentID.rawValue)
+            .ignoresSafeArea()
+        } else {
+            live2DOrStatic
+        }
+        #else
+        live2DOrStatic
+        #endif
+    }
+
+    /// Live2D is tried before the static fallback. Kept separate so the VRM
+    /// branch above can reuse it without duplicating the conditional.
+    @ViewBuilder private var live2DOrStatic: some View {
         #if JOI_LIVE2D
         if !nativeUnavailable, let live2d = liveModelSource {
             Live2DStageSurface(
