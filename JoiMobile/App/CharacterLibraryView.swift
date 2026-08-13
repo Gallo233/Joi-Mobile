@@ -68,22 +68,33 @@ struct CharacterLibraryView: View {
         Section("已安装角色") {
             if model.installedCharacters.isEmpty { Text("尚无已安装角色").foregroundStyle(.secondary) }
             ForEach(model.installedCharacters, id: \.installationID) { entry in
-                HStack { VStack(alignment: .leading) { Text(entry.displayName); Text(entry.renderer.rawValue).font(.caption).foregroundStyle(.secondary) }; Spacer()
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(entry.displayName)
+                        Text(entry.renderer.rawValue).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
                     if entry.installationID == model.sessionSelection.installationID {
                         Text("当前角色").font(.caption).foregroundStyle(.secondary)
                     } else if !entry.activationAllowed {
                         // Quarantined content has no activation action at all.
                         Text("权利待确认").font(.caption).foregroundStyle(.secondary)
-                        Button("移除", role: .destructive) { model.startRemoval(entry) }
                     } else if !entry.available {
                         Text("需要重新导入").font(.caption).foregroundStyle(.orange)
-                        Button("移除", role: .destructive) { model.startRemoval(entry) }
                     } else {
-                        // Without this an installed character could only be
-                        // activated in the session it was imported.
+                        // `.borderless` gives this its own hit area. Two default
+                        // buttons in one List row share the row's tap target, so a
+                        // tap on either could fire the other — which is how a
+                        // "set as current" tap could delete a character instead.
                         Button("设为当前") { model.startActivation(entry) }
-                        Button("移除", role: .destructive) { model.startRemoval(entry) }
+                            .buttonStyle(.borderless)
                     }
+                }
+                // Removal is a swipe action rather than a button beside the
+                // activate control. It is destructive and irreversible, so it
+                // must not sit one mis-tap away from an everyday action.
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button("移除", role: .destructive) { model.startRemoval(entry) }
                 }
             }
             Text("移除只删除此设备上的角色资产，不会删除聊天、记忆或行程。").font(.footnote).foregroundStyle(.secondary)

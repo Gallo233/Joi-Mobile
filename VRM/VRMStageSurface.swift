@@ -81,6 +81,7 @@ struct VRMStageSurface: UIViewRepresentable {
         private var queue: MTLCommandQueue?
         private var loadTask: Task<Void, Never>?
         private var reportedUnavailable = false
+        private var bounds: (min: SIMD3<Float>, max: SIMD3<Float>)?
 
         init(entryURL: URL, onUnavailable: @escaping () -> Void) {
             self.entryURL = entryURL
@@ -102,8 +103,38 @@ struct VRMStageSurface: UIViewRepresentable {
                     guard !Task.isCancelled else { return }
                     let renderer = VRMRenderer(device: device)
                     renderer.loadModel(model)
+                    // The renderer starts with no lights, which renders MToon as a
+                    // flat dark texture and reads as "the model loaded but looks
+                    // wrong". This is the cel-shading rig the SDK's own CLI uses:
+                    // one key light, a dim front fill, dark ambient, and
+                    // radiometric normalisation so authored intensities are not
+                    // scaled down by the shader's Lambert term.
+                    renderer.setLight(
+                        0,
+                        direction: SIMD3<Float>(-0.2, 0.5, -0.85),
+                        color: SIMD3<Float>(1, 1, 1),
+                        intensity: 1.0
+                    )
+                    renderer.disableLight(1)
+                    renderer.setLight(
+                        2,
+                        direction: SIMD3<Float>(0, 0.2, 1),
+                        color: SIMD3<Float>(1, 1, 1),
+                        intensity: 0.3
+                    )
+                    renderer.setAmbientColor(SIMD3<Float>(0.04, 0.04, 0.04))
+                    renderer.setLightNormalizationMode(.radiometric)
+
+                    // Framing comes from the model's own bounds rather than
+                    // hardcoded metres, so a wide T-pose is not cropped and a
+                    // differently proportioned avatar still fits.
+                    let (minBounds, maxBounds) = model.calculateBoundingBox()
+                    bounds = (minBounds, maxBounds)
                     self.renderer = renderer
-                    vrmLog.notice("vrm model loaded and renderer ready")
+                    vrmLog.notice("""
+                        vrm model loaded: bounds \(maxBounds - minBounds, privacy: .public) \
+                        center \((minBounds + maxBounds) / 2, privacy: .public)
+                        """)
                 } catch {
                     report(.modelRejected)
                 }
@@ -139,13 +170,44 @@ struct VRMStageSurface: UIViewRepresentable {
                 near: 0.01,
                 far: 100
             )
-            renderer.viewMatrix = Self.lookAt(
-                eye: framing.vrmCameraPosition,
-                center: framing.vrmCameraTarget
-            )
+            let (eye, target) = camera(aspect: Float(size.width / size.height))
+            renderer.viewMatrix = Self.lookAt(eye: eye, center: target)
             renderer.draw(in: view, commandBuffer: buffer, renderPassDescriptor: descriptor)
             buffer.present(drawable)
             buffer.commit()
+        }
+
+        /// Frames the model from its measured bounds. Full body fits the whole
+        /// height and width, including outstretched arms; half body aims at the
+        /// head. Distance is derived from the field of view rather than guessed,
+        /// so nothing is cropped on a narrow phone screen.
+        private func camera(aspect: Float) -> (SIMD3<Float>, SIMD3<Float>) {
+            guard let bounds else {
+                return (SIMD3<Float>(0, 1, 2.5), SIMD3<Float>(0, 1, 0))
+            }
+            let centre = (bounds.min + bounds.max) / 2
+            let extent = bounds.max - bounds.min
+            let halfFov = (45 * Float.pi / 180) / 2
+            switch framing {
+            case .fullBody:
+                // Fit whichever axis is tighter on this screen.
+                let neededForHeight = (extent.y / 2) / tan(halfFov)
+                let neededForWidth = (extent.x / 2) / (tan(halfFov) * max(aspect, 0.0001))
+                let distance = max(neededForHeight, neededForWidth) * 1.12 + extent.z
+                return (
+                    SIMD3<Float>(centre.x, centre.y, centre.z + distance),
+                    SIMD3<Float>(centre.x, centre.y, centre.z)
+                )
+            case .halfBody:
+                // The head sits near the top of the bounds; frame from the chest up.
+                let headY = bounds.max.y - extent.y * 0.09
+                let framedHeight = extent.y * 0.32
+                let distance = (framedHeight / 2) / tan(halfFov) + extent.z
+                return (
+                    SIMD3<Float>(centre.x, headY, centre.z + distance),
+                    SIMD3<Float>(centre.x, headY, centre.z)
+                )
+            }
         }
 
         /// Right-handed look-at, matching the convention the renderer's own CLI
