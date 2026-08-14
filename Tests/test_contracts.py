@@ -11,6 +11,24 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS = ROOT / "Contracts"
 
 
+def read(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def constant(source: str, pattern: str) -> int:
+    """A literal integer constant, read out of Swift or Kotlin source.
+
+    Accepts the `1_024 * 1_024` form both languages use for byte bounds, so the
+    declaration stays readable in the language that owns it.
+    """
+    match = re.search(pattern, source)
+    assert match, f"no constant matching {pattern!r}"
+    value = 1
+    for factor in re.findall(r"\d[\d_]*", match.group(1)):
+        value *= int(factor.replace("_", ""))
+    return value
+
+
 class ContractArtifactTests(unittest.TestCase):
     def test_all_json_contracts_and_fixtures_parse(self) -> None:
         files = sorted(CONTRACTS.rglob("*.json"))
@@ -79,6 +97,7 @@ class ContractArtifactTests(unittest.TestCase):
     def test_fixtures_validate_against_json_schemas(self) -> None:
         pairs = [
             ("character-package-manifest-v1.schema.json", "character-package.valid.json"),
+            ("character-package-manifest-v1.schema.json", "character-package-vrm-motions.valid.json"),
             ("companion-event-v1.schema.json", "companion-event.valid.json"),
         ]
         for schema_name, fixture_name in pairs:
@@ -136,6 +155,84 @@ class ContractArtifactTests(unittest.TestCase):
         absolute_source = deepcopy(fixture)
         absolute_source["provenance"]["source"] = "/private/avatar.vrm"
         self.assertTrue(list(validator.iter_errors(absolute_source)))
+
+    def test_the_declared_asset_bound_is_one_number_in_every_artifact(self) -> None:
+        """DEC-028: the defect was three artifacts disagreeing in silence.
+
+        The schema said 2000, the runtime limit said 2000, and the admission
+        walk's generic array guard said 300 without anyone writing that down.
+        Nothing in a JSON Schema or a Swift file can notice that, so it is
+        checked here, where all of them can be read at once.
+        """
+        schema = json.loads(
+            (CONTRACTS / "character-package-manifest-v1.schema.json").read_text(encoding="utf-8")
+        )
+        limits_swift = read(ROOT / "Packages/CharacterRuntime/Sources/CharacterRuntime/CharacterRuntime.swift")
+        walk_swift = read(
+            ROOT / "Packages/CharacterRuntime/Sources/CharacterRuntime/CharacterManifestValidation.swift"
+        )
+        limits_kotlin = read(ROOT / "android/companion-core/src/main/kotlin/com/joi/mobile/core/CharacterContracts.kt")
+        walk_kotlin = read(
+            ROOT / "android/character-runtime/src/main/kotlin/com/joi/mobile/character/CharacterManifestAdmission.kt"
+        )
+
+        declared = schema["properties"]["assets"]["maxItems"]
+        self.assertEqual(declared, constant(limits_swift, r"maximumFileCount = ([\d_ *]+)"))
+        self.assertEqual(declared, constant(limits_kotlin, r"MAXIMUM_FILE_COUNT: Int = ([\d_ *]+)"))
+
+        # The generic guard stays smaller than the declared bound on both
+        # platforms. That gap is the whole reason the exemption has to be
+        # written explicitly; if these two numbers ever meet, the exemption is
+        # dead code and this test should be the thing that says so.
+        guard = constant(walk_swift, r"maximumArrayElements = ([\d_ *]+)")
+        self.assertEqual(guard, constant(walk_kotlin, r"MAXIMUM_ARRAY_ELEMENTS = ([\d_ *]+)"))
+        self.assertLess(guard, declared)
+
+        # And the manifest must physically hold what the contract promises: a
+        # byte bound that bit first would cap the declared count at a number
+        # written nowhere. Measured against a real document, not asserted.
+        manifest_bytes = constant(limits_swift, r"maximumManifestBytes = ([\d_ *]+)")
+        self.assertEqual(manifest_bytes, constant(limits_kotlin, r"MAXIMUM_MANIFEST_BYTES: Int = ([\d_ *]+)"))
+        full = json.loads((CONTRACTS / "fixtures/character-package.valid.json").read_text(encoding="utf-8"))
+        full["assets"] = [
+            {"path": f"motions/{index:05d}.motion3.json", "mediaType": "application/json", "sha256": "0" * 64}
+            for index in range(declared)
+        ]
+        full["entryPath"] = full["assets"][0]["path"]
+        full.pop("portraitPath", None)
+        self.assertEqual(list(Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(full)), [])
+        self.assertLessEqual(len(json.dumps(full, separators=(",", ":")).encode("utf-8")), manifest_bytes)
+
+    def test_motion_table_admits_vrma_only_and_keeps_paths_bounded(self) -> None:
+        """DEC-024: motions carry animation into a VRM package without opening it up."""
+        schema = json.loads(
+            (CONTRACTS / "character-package-manifest-v1.schema.json").read_text(encoding="utf-8")
+        )
+        fixture = json.loads(
+            (CONTRACTS / "fixtures/character-package-vrm-motions.valid.json").read_text(encoding="utf-8")
+        )
+        validator = Draft202012Validator(schema, format_checker=FormatChecker())
+
+        # A motion may only point at a .vrma; the model itself carries no animation.
+        wrong_extension = deepcopy(fixture)
+        wrong_extension["motions"][0]["animation"] = "model.vrm"
+        self.assertTrue(list(validator.iter_errors(wrong_extension)))
+
+        escaping = deepcopy(fixture)
+        escaping["motions"][0]["animation"] = "../outside/idle.vrma"
+        self.assertTrue(list(validator.iter_errors(escaping)))
+
+        absolute = deepcopy(fixture)
+        absolute["motions"][0]["animation"] = "/tmp/idle.vrma"
+        self.assertTrue(list(validator.iter_errors(absolute)))
+
+        bad_name = deepcopy(fixture)
+        bad_name["motions"][0]["motion"] = "Idle Dance"
+        self.assertTrue(list(validator.iter_errors(bad_name)))
+
+        unknown_field = deepcopy(fixture)
+        unknown_field["motions"][0]["duration_ms"] = 7270
+        self.assertTrue(list(validator.iter_errors(unknown_field)))
 
 
 if __name__ == "__main__":

@@ -161,6 +161,10 @@ public enum CharacterFixtureEnvironment {
     public static let live2DFileCount = "JOI_MOBILE_LIVE2D_FIXTURE_FILE_COUNT"
     public static let vrmFileURL = "JOI_MOBILE_VRM_FIXTURE_FILE_URL"
     public static let vrmSHA256 = "JOI_MOBILE_VRM_FIXTURE_SHA256"
+    /// A built `.joi-character` carrying real `.vrma` clips, used to prove the
+    /// DEC-024 motion table survives a real install rather than only a synthetic
+    /// one. Like every fixture variable, the path stays in the shell.
+    public static let vrmMotionPackageURL = "JOI_MOBILE_VRM_MOTION_PACKAGE_URL"
 
     public static func fileURL(
         for variable: String,

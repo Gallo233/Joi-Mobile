@@ -1,0 +1,203 @@
+{
+  "schema": "joi.conformance.strict-json.v1",
+  "description": "Manifest documents are parsed by an owned strict scanner, not by a platform JSON convenience API, because every mainstream parser silently accepts a duplicate key and keeps the last one. A manifest whose meaning depends on which copy of a key won is not a manifest. These vectors pin what that scanner accepts, so an Android port cannot substitute org.json, Gson or kotlinx.serialization and still claim parity.",
+  "notes": [
+    "`expect` is `accept` or a stable import code. Every rejection here is `invalidManifest`; the scanner has no other outcome.",
+    "The scanner is required to produce a JSON *object* at the top level. A well-formed array or scalar document is still a rejection.",
+    "Maximum document size and nesting depth are part of the contract: 256 KiB for a manifest, and 64 nested containers."
+  ],
+  "cases": [
+    {
+      "id": "minimal-object",
+      "document": "{}",
+      "expect": "accept"
+    },
+    {
+      "id": "flat-values",
+      "document": "{\"s\":\"text\",\"n\":1,\"f\":1.5,\"e\":1.5e-3,\"neg\":-2,\"t\":true,\"f2\":false,\"z\":null}",
+      "expect": "accept"
+    },
+    {
+      "id": "nested-containers",
+      "document": "{\"a\":{\"b\":[1,2,{\"c\":[]}]},\"d\":[]}",
+      "expect": "accept"
+    },
+    {
+      "id": "valid-escapes",
+      "document": "{\"k\":\"quote:\\\" backslash:\\\\ slash:\\/ b:\\b f:\\f n:\\n r:\\r t:\\t u:\\u00e9 cjk:\\u8bf4\"}",
+      "expect": "accept"
+    },
+    {
+      "id": "raw-utf8-payload",
+      "document": "{\"displayName\":\"说明 café 🎏\"}",
+      "expect": "accept"
+    },
+    {
+      "id": "surrounding-whitespace",
+      "document": "  \t\r\n {\"a\":1}  \n ",
+      "expect": "accept"
+    },
+    {
+      "id": "duplicate-key-adjacent",
+      "document": "{\"a\":1,\"a\":2}",
+      "expect": "invalidManifest",
+      "note": "The whole reason this scanner exists. A last-key-wins parser accepts this and reads 2."
+    },
+    {
+      "id": "duplicate-key-nested",
+      "document": "{\"outer\":{\"renderer\":\"static\",\"renderer\":\"vrm\"}}",
+      "expect": "invalidManifest",
+      "note": "Duplicate detection is per object at every depth, not only at the root."
+    },
+    {
+      "id": "duplicate-key-separated",
+      "document": "{\"a\":1,\"b\":2,\"a\":3}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "same-key-different-objects",
+      "document": "{\"a\":{\"k\":1},\"b\":{\"k\":2}}",
+      "expect": "accept",
+      "note": "Sibling objects reusing a key name is ordinary and must not be confused with a duplicate."
+    },
+    {
+      "id": "top-level-array",
+      "document": "[1,2,3]",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "top-level-scalar",
+      "document": "\"joi.character.v1\"",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "empty-document",
+      "document": "",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "trailing-content",
+      "document": "{\"a\":1} {\"b\":2}",
+      "expect": "invalidManifest",
+      "note": "A second document after the first is refused rather than ignored."
+    },
+    {
+      "id": "trailing-comma-object",
+      "document": "{\"a\":1,}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "trailing-comma-array",
+      "document": "{\"a\":[1,2,]}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "unquoted-key",
+      "document": "{a:1}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "single-quoted-string",
+      "document": "{'a':1}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "leading-zero-number",
+      "document": "{\"a\":01}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "leading-plus-number",
+      "document": "{\"a\":+1}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "bare-fraction",
+      "document": "{\"a\":.5}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "trailing-fraction-point",
+      "document": "{\"a\":1.}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "exponent-without-digits",
+      "document": "{\"a\":1e}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "not-a-number-literal",
+      "document": "{\"a\":NaN}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "infinity-literal",
+      "document": "{\"a\":Infinity}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "truncated-literal",
+      "document": "{\"a\":tru}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "unterminated-string",
+      "document": "{\"a\":\"open}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "unterminated-object",
+      "document": "{\"a\":1",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "raw-control-character",
+      "document": "{\"a\":\"line\nbreak\"}",
+      "expect": "invalidManifest",
+      "note": "A literal U+000A inside a string is invalid JSON; it must be escaped."
+    },
+    {
+      "id": "raw-tab-in-string",
+      "document": "{\"a\":\"tab\there\"}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "unknown-escape",
+      "document": "{\"a\":\"bad \\x escape\"}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "single-quote-escape",
+      "document": "{\"a\":\"bad \\' escape\"}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "short-unicode-escape",
+      "document": "{\"a\":\"\\u12\"}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "non-hex-unicode-escape",
+      "document": "{\"a\":\"\\u12g4\"}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "javascript-comment",
+      "document": "{\"a\":1} // trailing note",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "depth-64",
+      "document": "{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":1}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}",
+      "expect": "accept",
+      "note": "64 nested containers is the last accepted depth."
+    },
+    {
+      "id": "depth-65",
+      "document": "{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":1}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}",
+      "expect": "invalidManifest",
+      "note": "One deeper. A recursive-descent port with no depth guard blows its stack here instead of returning a code."
+    }
+  ]
+}

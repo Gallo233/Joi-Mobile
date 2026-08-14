@@ -25,7 +25,23 @@
       "uniqueItems": true,
       "items": { "enum": ["zh-Hans", "zh-Hant", "en", "ja", "ko"] }
     },
+    "motions": {
+      "description": "Semantic motion name to declared VRMA asset. Only a vrm package may declare this; a .vrm file itself carries no animation (DEC-024).",
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["motion", "animation"],
+        "properties": {
+          "motion": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+          "animation": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+\\.vrma$" },
+          "loop": { "type": "boolean" }
+        }
+      }
+    },
     "assets": {
+      "description": "Every file the package declares. `maxItems` is the same number as CharacterPackageLimits.maximumFileCount / MAXIMUM_FILE_COUNT and the restricted-ZIP file-count gate, and the forbidden-content walk's generic 300-element array bound is not applied to this one array (DEC-028). A second bound the schema cannot express: the manifest document is read under a 1 MiB cap, which is what refuses a list of 2000 assets whose paths all approach the 512-character maximum.",
       "type": "array",
       "maxItems": 2000,
       "items": {

@@ -16,7 +16,9 @@ struct ChatStageView: View {
                 framing: model.stageFraming,
                 isResponding: model.chatTurnState.isPending,
                 speechPlayer: model.speechPlayer,
-                stageContent: model.stageContent
+                stageContent: model.stageContent,
+                motionCue: model.stageMotionCue,
+                onStageTap: { model.tapStage() }
             )
             .ignoresSafeArea()
 

@@ -44,6 +44,16 @@ enum StageFraming: String, CaseIterable, Sendable {
     }
 }
 
+/// One request for the character to play a motion it declared.
+///
+/// The sequence number is what makes a repeat visible: asking for `happy` twice
+/// in a row is two events, and a plain name would compare equal and be dropped
+/// by SwiftUI's diffing.
+struct StageMotionCue: Equatable, Sendable {
+    let motion: String
+    let sequence: Int
+}
+
 /// The persistent character stage. It always fills its container: conversation
 /// never squeezes it, because character presence is the product identity.
 struct CharacterStageView: View {
@@ -54,6 +64,10 @@ struct CharacterStageView: View {
     /// The activated character's content, when one is active. This is the product
     /// path; a developer fixture is only consulted when nothing is activated.
     var stageContent: CharacterContentAccess?
+    /// The latest motion the session asked the character to play.
+    var motionCue: StageMotionCue?
+    /// A tap that landed on the character rather than on the chrome above it.
+    var onStageTap: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Set when a native runtime was expected but could not present the model.
     /// The stage then shows the static fallback, never a blank or half-drawn
@@ -91,12 +105,17 @@ struct CharacterStageView: View {
         #if JOI_VRM
         if !nativeUnavailable, let vrm = stageContent, vrm.renderer == .vrm {
             VRMStageSurface(
-                entryURL: vrm.entryURL,
+                content: vrm,
                 framing: framing,
+                motionCue: motionCue,
+                amplitude: speechPlayer,
                 onUnavailable: { nativeUnavailable = true }
             )
             .id(vrm.contentID.rawValue)
             .ignoresSafeArea()
+            // A SwiftUI gesture, so the composer and the stage controls drawn
+            // above this layer win the touches that land on them.
+            .onTapGesture(perform: onStageTap)
         } else {
             live2DOrStatic
         }

@@ -25,13 +25,16 @@ case "$PLATFORM_NAME" in
     *) SDK_NAME="$PLATFORM_NAME" ;;
 esac
 
+# The only directory this phase creates is the one holding its declared
+# outputs, which is what script sandboxing grants it. Nothing is written to
+# $DERIVED_FILE_DIR: this is a pre-build phase, so that directory does not exist
+# yet, and creating it is denied. Building into a $BUILT_PRODUCTS_DIR under /tmp
+# hides that, because the sandbox allows writes anywhere under /tmp — which is
+# why this only ever failed from Xcode's own DerivedData.
 mkdir -p "$OUT"
-WORK="$DERIVED_FILE_DIR/live2d-metal"
-mkdir -p "$WORK"
 
 for name in MetalShaders VertShaderSrcBlend VertShaderSrcMaskedBlend; do
     src="$SHADERS/$name.metal"
-    air="$WORK/$name-$SDK_NAME.air"
     lib="$OUT/$name.metallib"
     if [ ! -f "$src" ]; then
         echo "error: shader source $src missing" >&2
@@ -40,8 +43,9 @@ for name in MetalShaders VertShaderSrcBlend VertShaderSrcMaskedBlend; do
     if [ -f "$lib" ] && [ "$lib" -nt "$src" ]; then
         continue
     fi
-    xcrun -sdk "$SDK_NAME" metal -I "$SHADERS" -o "$air" -c "$src"
-    xcrun -sdk "$SDK_NAME" metallib -o "$lib" "$air"
+    # Straight from .metal to .metallib. The separate .air step needed a scratch
+    # directory and bought nothing: each library is one translation unit.
+    xcrun -sdk "$SDK_NAME" metal -I "$SHADERS" -o "$lib" "$src"
 done
 
 echo "compiled Cubism Metal libraries for $SDK_NAME into FrameworkMetallibs"

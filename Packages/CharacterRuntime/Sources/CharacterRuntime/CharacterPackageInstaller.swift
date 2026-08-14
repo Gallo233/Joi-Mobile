@@ -178,6 +178,10 @@ public struct CharacterContentAccess: Equatable, Sendable {
     public let root: URL
     /// Manifest-declared entry file, relative to `root`.
     public let entryPath: String
+    /// Manifest-declared motions, already checked to name declared `.vrma`
+    /// assets inside this tree. A renderer plays these and nothing else, so it
+    /// can never be pointed at an arbitrary file (DEC-024).
+    public let motions: [CharacterMotionV1]
     public let displayName: String
 
     @_spi(CharacterPackageInstaller)
@@ -187,6 +191,7 @@ public struct CharacterContentAccess: Equatable, Sendable {
         renderer: CharacterRendererKind,
         root: URL,
         entryPath: String,
+        motions: [CharacterMotionV1] = [],
         displayName: String
     ) {
         self.installationID = installationID
@@ -194,12 +199,19 @@ public struct CharacterContentAccess: Equatable, Sendable {
         self.renderer = renderer
         self.root = root
         self.entryPath = entryPath
+        self.motions = motions
         self.displayName = displayName
     }
 
     /// Absolute URL of the entry file.
     public var entryURL: URL {
         root.appendingPathComponent(entryPath)
+    }
+
+    /// Absolute URL of one declared motion's clip, or nil when the character
+    /// declares no such motion.
+    public func animationURL(forMotion motion: String) -> URL? {
+        motions.first { $0.motion == motion }.map { root.appendingPathComponent($0.animation) }
     }
 }
 
@@ -475,6 +487,7 @@ public actor CharacterPackageInstaller {
             renderer: record.manifest.renderer,
             root: root,
             entryPath: record.manifest.entryPath,
+            motions: record.manifest.declaredMotions,
             displayName: record.manifest.displayName
         )
     }

@@ -135,6 +135,69 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(FileManager.default.isReadableFile(atPath: access.entryURL.path))
     }
 
+    /// A motion cue is presentation only. It must survive a repeat of the same
+    /// motion, and must not touch the session, the selection or the transcript.
+    func testMotionCuesAreRepeatableAndTouchNothingButTheStage() async throws {
+        let fixture = try AppCharacterFixture()
+        defer { fixture.cleanup() }
+        let model = AppModel(installer: CharacterPackageInstaller(root: fixture.store))
+        XCTAssertNil(model.stageMotionCue, "no character has been asked to move yet")
+        let before = await model.companionSession.current()
+
+        model.requestStageMotion("greet")
+        let first = try XCTUnwrap(model.stageMotionCue)
+        XCTAssertEqual(first.motion, "greet")
+
+        // Asking twice for the same motion must read as two events; a bare name
+        // would compare equal and the second request would be silently dropped.
+        model.requestStageMotion("greet")
+        let second = try XCTUnwrap(model.stageMotionCue)
+        XCTAssertNotEqual(second, first)
+        XCTAssertEqual(second.motion, "greet")
+
+        let after = await model.companionSession.current()
+        XCTAssertEqual(after, before, "a motion cue is not a session event")
+        XCTAssertTrue(model.chatTranscript.isEmpty)
+    }
+
+    /// Activation asks the new character to greet. A `static` package declares no
+    /// motions, so the cue exists and simply moves nothing — the point is that a
+    /// character with no motion table is not a failure path.
+    func testActivationCuesAGreetingWithoutRequiringTheCharacterToHaveOne() async throws {
+        let fixture = try AppCharacterFixture()
+        defer { fixture.cleanup() }
+        let model = AppModel(installer: CharacterPackageInstaller(root: fixture.store))
+        let installed = try await install(fixture.archive, into: model)
+        model.startActivation(installed)
+        let published = try await waitUntil { model.stageContent != nil }
+        XCTAssertTrue(published)
+
+        let cue = try XCTUnwrap(model.stageMotionCue)
+        XCTAssertEqual(cue.motion, "greet")
+        let access = try XCTUnwrap(model.stageContent)
+        XCTAssertTrue(access.motions.isEmpty, "a static package declares no motions")
+        XCTAssertNil(access.animationURL(forMotion: "greet"))
+    }
+
+    /// A tap plays only what the package declared. A `static` character declares
+    /// no motions, so the tap must issue nothing at all rather than a cue for a
+    /// motion that does not exist.
+    func testTappingACharacterWithNoDeclaredMotionsIssuesNoCue() async throws {
+        let fixture = try AppCharacterFixture()
+        defer { fixture.cleanup() }
+        let model = AppModel(installer: CharacterPackageInstaller(root: fixture.store))
+        let installed = try await install(fixture.archive, into: model)
+        model.startActivation(installed)
+        let published = try await waitUntil { model.stageContent != nil }
+        XCTAssertTrue(published)
+        // Activation greets, so compare against that rather than against nil.
+        let afterActivation = model.stageMotionCue
+
+        model.tapStage()
+        model.tapStage()
+        XCTAssertEqual(model.stageMotionCue, afterActivation, "no declared motion, no cue")
+    }
+
     func testContentAccessIsRefusedForAStaleHandleAndClearedOnRemoval() async throws {
         let fixture = try AppCharacterFixture()
         defer { fixture.cleanup() }

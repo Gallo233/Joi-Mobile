@@ -1,0 +1,190 @@
+{
+  "schema": "joi.conformance.content-id.v1",
+  "description": "Content-tree identity vectors. Both the iOS and the Android package installer must produce the listed contentID for the listed files.",
+  "domainSeparator": "joi.character.content-tree.v1",
+  "pathNormalization": "Paths are hashed as NFC UTF-8 bytes. Normalization is a property of the package, never of the volume it was unpacked onto.",
+  "cases": [
+    {
+      "id": "empty-tree",
+      "note": "No files at all. Only the domain frame is hashed, so an empty tree still has a stable identity rather than a degenerate one.",
+      "files": [],
+      "contentID": "sha256:c994f6aab6a09f1f56931c53701215840000d09ddf242fd8b2b5b791dbfc4fca"
+    },
+    {
+      "id": "single-file",
+      "note": "One file. Pins path framing, size framing and hex-text digest framing against each other.",
+      "files": [
+        {
+          "path": "manifest.json",
+          "base64": "eyJzY2hlbWEiOiJqb2kuY2hhcmFjdGVyLnYxIn0="
+        }
+      ],
+      "contentID": "sha256:5557437e230158c412ec736edfb26271cff4de417b03b2b13d44ec36ae5dcca9"
+    },
+    {
+      "id": "empty-file",
+      "note": "A zero-byte file still contributes its path, a zero size and the SHA-256 of the empty string. A port that skips empty files diverges here.",
+      "files": [
+        {
+          "path": "empty.bin",
+          "base64": ""
+        },
+        {
+          "path": "manifest.json",
+          "base64": "e30="
+        }
+      ],
+      "contentID": "sha256:cef8f7a4d9f5de972644602b4e7607760efe78b36bd4d1a662f7eba8830e0e9f"
+    },
+    {
+      "id": "binary-payload",
+      "note": "Non-UTF-8 bytes, including a NUL and a 0xFF. Digests are over raw bytes, never over a decoded string.",
+      "files": [
+        {
+          "path": "manifest.json",
+          "base64": "e30="
+        },
+        {
+          "path": "model.vrm",
+          "base64": "Z2xURgIAAP8="
+        }
+      ],
+      "contentID": "sha256:3d063dbe05f5aa53e3d7756a5d7fea6cd606c8550ddd433a7ffd657d41b46d72"
+    },
+    {
+      "id": "nested-paths",
+      "note": "Package-relative paths with a directory segment. Ordering is over the whole relative path, so 'model.vrm' sorts before 'motions/greet.vrma' ('d' < 't'), not after it by directory depth.",
+      "files": [
+        {
+          "path": "manifest.json",
+          "base64": "e30="
+        },
+        {
+          "path": "model.vrm",
+          "base64": "bW9kZWw="
+        },
+        {
+          "path": "motions/greet.vrma",
+          "base64": "Z3JlZXQ="
+        },
+        {
+          "path": "motions/idle.vrma",
+          "base64": "aWRsZQ=="
+        }
+      ],
+      "contentID": "sha256:4ee73599a66c35efac5dc241a3cc6294996a5adb867ae43a153c9e8aa2404084"
+    },
+    {
+      "id": "order-independence",
+      "note": "Same content as 'nested-paths' with the entries authored in reverse. The identity must be identical: a port that hashes in enumeration order rather than sorted order passes 'nested-paths' and fails this one.",
+      "files": [
+        {
+          "path": "manifest.json",
+          "base64": "e30="
+        },
+        {
+          "path": "model.vrm",
+          "base64": "bW9kZWw="
+        },
+        {
+          "path": "motions/greet.vrma",
+          "base64": "Z3JlZXQ="
+        },
+        {
+          "path": "motions/idle.vrma",
+          "base64": "aWRsZQ=="
+        }
+      ],
+      "contentID": "sha256:4ee73599a66c35efac5dc241a3cc6294996a5adb867ae43a153c9e8aa2404084"
+    },
+    {
+      "id": "separator-ordering",
+      "note": "'/' is 0x2F, below every alphanumeric, so 'a/b' sorts before 'ab'. This is the case where a sort over path *components* diverges from a sort over the path string.",
+      "files": [
+        {
+          "path": "a-b",
+          "base64": "Mw=="
+        },
+        {
+          "path": "a/b",
+          "base64": "MQ=="
+        },
+        {
+          "path": "ab",
+          "base64": "Mg=="
+        }
+      ],
+      "contentID": "sha256:804de3aa1b4c814c30b87832a0fe5fbfe8d5ae873525d8b7a6fca163a8b394f3"
+    },
+    {
+      "id": "same-bytes-different-paths",
+      "note": "Two files with identical content. Identity must still separate them, which it does only because the path is framed alongside the digest.",
+      "files": [
+        {
+          "path": "one.txt",
+          "base64": "c2FtZQ=="
+        },
+        {
+          "path": "two.txt",
+          "base64": "c2FtZQ=="
+        }
+      ],
+      "contentID": "sha256:7ef3cfecc7532bdd31ea82a57df2d4d72681f933504a0afece39015fc862a1eb"
+    },
+    {
+      "id": "non-ascii-paths",
+      "note": "CJK path segments, none of which has a canonical decomposition. Ordering is by UTF-8 bytes, not by a locale collation, so 'zzz.txt' sorts before '资料/说明.json'.",
+      "files": [
+        {
+          "path": "manifest.json",
+          "base64": "e30="
+        },
+        {
+          "path": "zzz.txt",
+          "base64": "eg=="
+        },
+        {
+          "path": "资料/说明.json",
+          "base64": "e30="
+        }
+      ],
+      "contentID": "sha256:25a827efec31c50904b3c5e5165671c9f617793ece66b2120fe88a982ce39068"
+    },
+    {
+      "id": "supplementary-plane-ordering",
+      "note": "U+FF21 (UTF-8 EF BC A1, UTF-16 FF21) against U+1F38F (UTF-8 F0 9F 8E 8F, UTF-16 D83C DF8F). By UTF-8 bytes the fullwidth letter sorts first; by UTF-16 code units the emoji does. Java and Kotlin's default String ordering is UTF-16, so a port that calls sorted() and stops fails exactly here and nowhere else in this file.",
+      "files": [
+        {
+          "path": "manifest.json",
+          "base64": "e30="
+        },
+        {
+          "path": "Ａ.txt",
+          "base64": "ZnVsbHdpZHRo"
+        },
+        {
+          "path": "🎏.txt",
+          "base64": "Y2FycA=="
+        }
+      ],
+      "contentID": "sha256:e6329de8ab339b2b0647c608e931de7bac1ffdadc0e46b6ed09a4692fff7e36f"
+    },
+    {
+      "id": "decomposable-path",
+      "note": "A filename with a canonical decomposition, written composed. Every European accented name and several kana with dakuten land here.",
+      "normative": false,
+      "finding": "The path is hashed as the bytes the filesystem hands back, not as the bytes the package declared. Darwin returns 'café.txt' decomposed (U+0065 U+0301) even when it was written composed (U+00E9), so iOS computes this identity over NFD bytes while a port on ext4 computes it over NFC bytes. The two never agree, and no test caught it because Swift's String equality is canonical: the installer's `normalized == path` guard compares NFC against NFD and returns true. The rule as written here — hash NFC bytes — is the one that makes identity a property of the package rather than of the volume.",
+      "files": [
+        {
+          "path": "café.txt",
+          "base64": "Y2FmZQ=="
+        },
+        {
+          "path": "manifest.json",
+          "base64": "e30="
+        }
+      ],
+      "contentID": "sha256:654d432e82422c675f5524c3aaa61f7a4cf2b2980ce700d8e9b6c49baa95cdfe"
+    }
+  ]
+}

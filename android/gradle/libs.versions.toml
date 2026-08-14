@@ -1,0 +1,75 @@
+# Exact pins, in the same spirit as the iOS side: XcodeGen, ZIPFoundation and
+# VRMMetalKit are all pinned to an exact version or revision, and a dependency
+# that drifts is a dependency nobody reviewed.
+#
+# The versions below are one combination, not three independent choices. Do not
+# bump any of them alone.
+#
+#   AGP 9.3.1      needs Gradle ≥ 9.5.0; it is the first AGP supporting
+#                  API 37, which Compose 1.12.0 requires to compile against
+#   Gradle 9.5.0   satisfies AGP's floor and Kotlin's 9.5.0 ceiling at once
+#   Kotlin 2.4.10  applies to the plain-JVM modules only, so only its Gradle
+#                  range matters. JetBrains' KGP-to-AGP table does not bind
+#                  here: AGP 9 compiles the app's Kotlin itself and refuses
+#                  the standalone `org.jetbrains.kotlin.android` plugin.
+#
+# A `NoClassDefFoundError: com/android/build/gradle/api/BaseVariant` while
+# applying the Kotlin Android plugin is **not** a version problem, and chasing it
+# by moving versions costs hours. That class is present in every AGP jar we
+# checked — 8.11.1, 9.1.0 and 9.3.1 all carry it in `gradle-<version>.jar`. The
+# error means the classloader that needed it could not see the one that had it,
+# which happens when the Kotlin and Android plugins are declared in different
+# projects' `plugins {}` blocks. The root build declares all three; see the
+# comment there.
+#
+# These versions are the documented pairing, not a workaround for that bug. If
+# you want to move to AGP 9, the constraint to check is JetBrains' KGP table —
+# 2.2.21 lists AGP 7.3.1–8.11.1 — not anything about BaseVariant.
+[versions]
+kotlin = "2.4.10"
+agp = "9.3.1"
+
+# Java 17 is the floor AGP 9 requires and the level Android desugars to. The
+# portable modules compile to it so that moving a class into the app module is
+# never a compatibility question.
+jvmTarget = "17"
+
+# 37, because the Compose artifacts the BOM selects declare it as their
+# minimum compile target. This is an AAR metadata constraint, checked before
+# compilation, not a recommendation.
+compileSdk = "37"
+minSdk = "26"
+targetSdk = "37"
+
+androidxCore = "1.19.0"
+activityCompose = "1.13.0"
+composeBom = "2026.08.00"
+junit = "5.10.1"
+junitPlatform = "1.10.1"
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+android-application = { id = "com.android.application", version.ref = "agp" }
+
+# There is deliberately no `kotlin-android` alias. It and `kotlin-jvm` are two
+# markers for the same artifact, so declaring both with versions in one build
+# makes Gradle refuse the second: "already on the classpath with an unknown
+# version". `:app` applies `org.jetbrains.kotlin.android` by bare id instead, and
+# an alias sitting here would be an invitation to reintroduce the failure.
+
+[libraries]
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+compose-ui = { module = "androidx.compose.ui:ui" }
+compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
+compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+compose-material3 = { module = "androidx.compose.material3:material3" }
+
+# `:app` does not apply the Kotlin Gradle plugin — AGP 9 compiles its Kotlin —
+# so the `kotlin("test")` helper is unavailable there and the coordinates are
+# written out. The JVM modules keep using the helper.
+kotlin-test-junit5 = { module = "org.jetbrains.kotlin:kotlin-test-junit5", version.ref = "kotlin" }
+junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "junit" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junitPlatform" }

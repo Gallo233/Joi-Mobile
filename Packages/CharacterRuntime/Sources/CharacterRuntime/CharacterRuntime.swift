@@ -7,6 +7,13 @@ public enum CharacterPackageLimits {
     public static let maximumExpandedBytes = 512 * 1_024 * 1_024
     public static let maximumFileCount = 2_000
     public static let maximumExpansionRatio = 20
+    /// Declared motions per package. Matches the contract schema's `maxItems`.
+    public static let maximumMotionCount = 64
+    /// The manifest document itself. Sized so `maximumFileCount` declared assets
+    /// fit at any path length a real package uses, because a byte bound that bit
+    /// first would cap the declared asset count at a number the contract never
+    /// states — and would report it as `unsafeArchive` (DEC-028).
+    public static let maximumManifestBytes = 1_024 * 1_024
 }
 
 public enum CharacterPackageValidationError: Error, Equatable, Sendable {

@@ -1,0 +1,42 @@
+{
+  "schema": "joi.character.v1",
+  "packageID": "joi.fixture.vrm",
+  "characterID": "joi.fixture.vrm",
+  "version": "1.0.0",
+  "displayName": "Joi VRM 装配示例",
+  "renderer": "vrm",
+  "entryPath": "model.vrm",
+  "portraitPath": "portrait.png",
+  "locales": ["zh-Hans"],
+  "motions": [
+    { "motion": "idle", "animation": "motions/idle.vrma", "loop": true },
+    { "motion": "greet", "animation": "motions/greet.vrma" }
+  ],
+  "assets": [
+    {
+      "path": "model.vrm",
+      "mediaType": "model/gltf-binary",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "path": "portrait.png",
+      "mediaType": "image/png",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "path": "motions/idle.vrma",
+      "mediaType": "model/gltf-binary",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "path": "motions/greet.vrma",
+      "mediaType": "model/gltf-binary",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "provenance": {
+    "author": "Joi Mobile fixture",
+    "license": "Repository test metadata only",
+    "source": null
+  }
+}

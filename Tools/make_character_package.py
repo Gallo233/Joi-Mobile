@@ -17,6 +17,18 @@ it.
         --license "Live2D Free Material License; local evaluation only" \
         --out ~/packages/hiyori.joi-character
 
+A `.vrm` file contains a rig and no animation at all, so a VRM character's idle
+and gesture clips are separate `.vrma` files that `--motion` brings into the
+package and names in the manifest's motion table (DEC-024):
+
+    Tools/make_character_package.py \
+        --input ~/models/avatar-a.vrm --renderer vrm \
+        --motion idle=~/motions/idle.vrma:loop \
+        --motion greet=~/motions/VRMA_02.vrma \
+        --name "AvatarSample A" --author "VRM Consortium" \
+        --license "VRM sample model terms; local evaluation only" \
+        --out ~/packages/avatar-a.joi-character
+
 Nothing this produces may be redistributed unless the declared licence permits
 it. The output is a local test artefact.
 """
@@ -26,6 +38,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 import zipfile
 from pathlib import Path
@@ -50,6 +63,11 @@ MEDIA_TYPES = {
 
 MAXIMUM_FILES = 2000
 MAXIMUM_EXPANDED_BYTES = 512 * 1024 * 1024
+MAXIMUM_MOTIONS = 64
+
+# Mirrors CharacterManifestValidator.validMotionName. Deliberately narrower than
+# an asset path: these names are triggered by product code and appear in logs.
+MOTION_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 
 def media_type(path: Path) -> str:
@@ -118,6 +136,70 @@ def _derive_id(name: str) -> str:
     return f"local.{slug}"
 
 
+def parse_motion(spec: str) -> tuple[str, Path, bool]:
+    """Parses `name=path` or `name=path:loop`.
+
+    The `:loop` suffix is matched literally at the end rather than by splitting
+    on ':', because a POSIX path may legitimately contain a colon.
+    """
+    name, separator, remainder = spec.partition("=")
+    if not separator or not remainder:
+        raise SystemExit(f"error: --motion '{spec}' is not name=path[:loop]")
+    loop = remainder.endswith(":loop")
+    if loop:
+        remainder = remainder[: -len(":loop")]
+    if not MOTION_NAME.match(name):
+        raise SystemExit(
+            f"error: motion name '{name}' is rejected by the installer. Use "
+            "lowercase ASCII letters, digits, '_' and '-', starting alphanumeric."
+        )
+    path = Path(remainder).expanduser()
+    if path.suffix.lower() != ".vrma":
+        raise SystemExit(f"error: motion '{name}' points at '{path.name}', which is not a .vrma")
+    if not path.is_file():
+        raise SystemExit(f"error: motion '{name}' points at {path}, which does not exist")
+    return name, path.resolve(), loop
+
+
+def resolve_motions(
+    specs: list[str],
+    root: Path,
+    entries: list[tuple[str, Path]],
+) -> tuple[list[dict[str, object]], list[tuple[str, Path]]]:
+    """Places each motion clip in the package and builds the manifest table.
+
+    A clip that already lives inside the packaged directory keeps its own
+    relative path; anything brought in from outside is placed under `motions/`
+    so the package stays self-describing and no source directory layout - or
+    absolute path - leaks into the manifest.
+    """
+    if len(specs) > MAXIMUM_MOTIONS:
+        raise SystemExit(f"error: {len(specs)} motions exceeds the installer's {MAXIMUM_MOTIONS} limit")
+    existing = {path.resolve(): name for name, path in entries}
+    table: list[dict[str, object]] = []
+    added: list[tuple[str, Path]] = []
+    seen_names: set[str] = set()
+    claimed: dict[str, Path] = {}
+    for spec in specs:
+        name, source, loop = parse_motion(spec)
+        if name in seen_names:
+            raise SystemExit(f"error: motion '{name}' is declared twice")
+        seen_names.add(name)
+        if source in existing:
+            packaged = existing[source]
+        else:
+            packaged = f"motions/{name}.vrma"
+            added.append((packaged, source))
+        previous = claimed.setdefault(packaged, source)
+        if previous != source:
+            raise SystemExit(f"error: two motions would both be packaged as '{packaged}'")
+        entry: dict[str, object] = {"motion": name, "animation": packaged}
+        if loop:
+            entry["loop"] = True
+        table.append(entry)
+    return table, added
+
+
 def _write(archive: zipfile.ZipFile, name: str, data: bytes) -> None:
     info = zipfile.ZipInfo(name, date_time=FIXED_TIMESTAMP)
     info.compress_type = zipfile.ZIP_DEFLATED
@@ -136,8 +218,24 @@ def main() -> None:
     parser.add_argument("--license", required=True, dest="licence", help="the licence you are relying on")
     parser.add_argument("--id", dest="character_id", help="character id (default derived from name)")
     parser.add_argument("--version", default="1.0.0")
+    parser.add_argument(
+        "--motion",
+        action="append",
+        default=[],
+        metavar="NAME=PATH[:loop]",
+        help=(
+            "a .vrma clip and the semantic name that triggers it, e.g. "
+            "idle=motions/idle.vrma:loop. Repeatable; vrm packages only."
+        ),
+    )
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
+
+    if args.motion and args.renderer != "vrm":
+        raise SystemExit(
+            f"error: --motion is a vrm-only contract; a {args.renderer} package "
+            "declares its motions inside its own model graph."
+        )
 
     source = Path(args.input).expanduser()
     output = Path(args.out).expanduser()
@@ -155,6 +253,10 @@ def main() -> None:
 
     if not entries:
         raise SystemExit("error: no files to package")
+
+    motions, extra = resolve_motions(args.motion, root, entries)
+    entries += extra
+
     if len(entries) > MAXIMUM_FILES:
         raise SystemExit(f"error: {len(entries)} files exceeds the installer's {MAXIMUM_FILES} limit")
     if not any(name == entry_path for name, _ in entries):
@@ -194,6 +296,8 @@ def main() -> None:
     }
     if portrait:
         manifest["portraitPath"] = portrait
+    if motions:
+        manifest["motions"] = motions
 
     output.parent.mkdir(parents=True, exist_ok=True)
     manifest_bytes = json.dumps(manifest, ensure_ascii=False, sort_keys=True).encode("utf-8")
@@ -208,6 +312,9 @@ def main() -> None:
     print(f"  renderer   {args.renderer}")
     print(f"  entry      {entry_path}")
     print(f"  files      {len(entries)} ({total / 1024 / 1024:.1f} MiB expanded)")
+    for motion in motions:
+        loop = " (loop)" if motion.get("loop") else ""
+        print(f"  motion     {motion['motion']} -> {motion['animation']}{loop}")
     print(f"  package    {output.stat().st_size / 1024 / 1024:.1f} MiB")
     print(f"  provenance {args.author} / {args.licence}")
 

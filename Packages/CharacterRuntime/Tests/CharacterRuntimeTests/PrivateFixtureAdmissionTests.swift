@@ -227,6 +227,42 @@ final class PrivateFixtureAdmissionTests: XCTestCase {
         XCTAssertTrue(fixture.compatibility.capabilities.lipSync)
     }
 
+    /// The synthetic motion cases prove the rules; this proves they hold for a
+    /// real package built by `Tools/make_character_package.py` from real VRMA
+    /// clips, which is the artefact the app actually installs.
+    func testPrivateVRMMotionPackageInstallsAndKeepsItsMotionTable() async throws {
+        guard let packageURL = try CharacterFixtureEnvironment.fileURL(
+            for: CharacterFixtureEnvironment.vrmMotionPackageURL
+        ) else {
+            throw XCTSkip("Set \(CharacterFixtureEnvironment.vrmMotionPackageURL) to run the private motion package gate")
+        }
+        let store = FileManager.default.temporaryDirectory
+            .appendingPathComponent("joi-motion-store-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: store) }
+        let installer = CharacterPackageInstaller(root: store)
+
+        let installed = try await installer.install(.joiCharacterArchive(packageURL))
+        XCTAssertNil(installed.disposition, "a package with declared provenance is not quarantined")
+        XCTAssertEqual(installed.manifest.renderer, .vrm)
+        let declared = installed.manifest.declaredMotions
+        XCTAssertFalse(declared.isEmpty, "the package under test must declare motions")
+        XCTAssertEqual(declared.filter(\.loops).count, 1, "exactly one clip loops: idle")
+
+        let handle = try await installer.prepareActivation(installed.installationID)
+        let access = try await installer.contentAccess(for: handle)
+        XCTAssertEqual(access.motions.map(\.motion), declared.map(\.motion))
+        for motion in access.motions {
+            let url = try XCTUnwrap(access.animationURL(forMotion: motion.motion))
+            XCTAssertTrue(
+                FileManager.default.isReadableFile(atPath: url.path),
+                "declared clip unreadable: \(motion.motion)"
+            )
+            // Every clip must really be VRMA, read from the file, not its name.
+            XCTAssertEqual(try CharacterMediaValidator.vrmFormat(at: url), .vrma)
+        }
+        await installer.releaseActivation(handle)
+    }
+
     private var syntheticDisclosure: CharacterFixtureDisclosure {
         CharacterFixtureDisclosure(
             sourceStatus: .syntheticTest,

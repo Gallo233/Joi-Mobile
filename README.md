@@ -11,8 +11,10 @@ The current repository slice is a buildable shell, contract foundation and three
 
 - `JoiMobile/` — SwiftUI app shell and composition root.
 - `Packages/` — modular Swift features and runtime adapters.
+- `android/` — the second native client. Portable Kotlin core today; no UI or renderer yet.
 - `Backend/` — local mock and future official proxy boundary; no production credentials.
 - `Contracts/` — cross-platform JSON Schema and OpenAPI artifacts.
+- `Contracts/conformance/` — executable vectors every client must pass.
 - `Tests/` — repository-level contract and integration checks.
 - `docs/PRD.md` / `docs/TDD.md` — product and technical source of truth.
 - `docs/STATUS.md` / `docs/DECISIONS.md` — evidence, gates, and durable decisions.
@@ -57,8 +59,30 @@ export JOI_MOBILE_LIVE2D_FIXTURE_TREE_SHA256='6cba59fe0631a94a2c40d535f2312f3b31
 export JOI_MOBILE_LIVE2D_FIXTURE_FILE_COUNT='17'
 export JOI_MOBILE_VRM_FIXTURE_FILE_URL='/absolute/path/to/avatar.vrm'
 export JOI_MOBILE_VRM_FIXTURE_SHA256='2a0ccd84880b03d7b65503d8b6287f7a97f3bb4fab70a5fd0a47b433c97827f5'
+# Optional: a package built by Tools/make_character_package.py with --motion, to
+# prove the DEC-024 motion table survives a real install with real .vrma clips.
+export JOI_MOBILE_VRM_MOTION_PACKAGE_URL='/absolute/path/to/avatar.joi-character'
 
 swift test --package-path Packages/CharacterRuntime
 ```
 
 This lane proves admission, safe local wrapping and metadata compatibility only. Unknown-rights inputs remain quarantined and cannot activate. It does not prove native Cubism/RealityKit rendering, VRM 1.0, VRMA, real-device performance or distribution rights.
+
+## Cross-platform conformance
+
+A JSON Schema pins a document's shape. It cannot pin that a duplicate key makes a manifest inadmissible, which of two envelopes sharing the `joi.character.v1` label a document belongs to, which stable code each refusal produces, how a package's content identity is computed byte for byte, or how the event stream is framed. All of that was Swift source with English around it, which is not something a second client can be tested against.
+
+`Contracts/conformance/` holds those semantics as executable vectors — 100 of them today — and every client runs the same files:
+
+```bash
+swift test --package-path Packages/CharacterRuntime --filter Conformance
+swift test --package-path Packages/ChatFeature --filter Conformance
+cd android && ./gradlew test
+python3 Tools/make_conformance_corpus.py --check
+```
+
+See `Contracts/conformance/README.md` for the rules, and `docs/DECISIONS.md` DEC-026 for what running them against the shipping iOS implementation found.
+
+## Android
+
+`android/` is the second native client: Kotlin, plain-JVM modules mirroring the Swift packages, no Android SDK required to build or test them. It has no UI, no renderer and no networking yet. See `android/README.md` for what exists, what is deliberately deferred and why the portable core came before the shell.

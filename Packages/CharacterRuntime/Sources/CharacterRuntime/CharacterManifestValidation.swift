@@ -5,11 +5,16 @@ import Foundation
 import ImageIO
 
 enum StrictJSON {
-    static func object(_ data: Data, maximumBytes: Int = 256 * 1024) throws -> [String: Any] {
+    static func object(_ data: Data, maximumBytes: Int = CharacterPackageLimits.maximumManifestBytes) throws -> [String: Any] {
         guard data.count <= maximumBytes else { throw CharacterPackageImportFailure(.invalidManifest, .validate) }
         var scanner = DuplicateKeyScanner(data)
         try scanner.scanDocument()
-        guard let object = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
+        // `try?` rather than `try`: the scanner accepts a well-formed top-level
+        // scalar, which JSONSerialization refuses as a fragment. Letting that
+        // NSError propagate would put a Foundation error where every caller
+        // expects a stable import code.
+        guard let parsed = try? JSONSerialization.jsonObject(with: data, options: []),
+              let object = parsed as? [String: Any] else {
             throw CharacterPackageImportFailure(.invalidManifest, .validate)
         }
         return object
@@ -162,7 +167,7 @@ enum CharacterManifestValidator {
     private static let canonicalRequired: Set<String> = [
         "schema", "packageID", "characterID", "version", "displayName", "renderer", "entryPath", "locales", "assets", "provenance",
     ]
-    private static let canonicalAllowed = canonicalRequired.union(["portraitPath"])
+    private static let canonicalAllowed = canonicalRequired.union(["portraitPath", "motions"])
     private static let canonicalFamily: Set<String> = ["packageID", "characterID", "renderer", "entryPath", "assets", "provenance"]
     private static let legacyFamily: Set<String> = ["id", "identity", "appearance"]
     private static let legacyAllowed: Set<String> = [
@@ -173,10 +178,16 @@ enum CharacterManifestValidator {
         "memory", "messages", "affinity", "permission", "secret", "sync", "runtime", "token", "apikey", "api_key", "credential",
         "grant", "capability", "modelweight", "model_weight", "privatekey", "private_key",
     ]
+    /// A generic anti-blowup bound on an array anywhere in a package document. It
+    /// exists so a hostile document cannot make the forbidden-content walk
+    /// expensive; it says nothing about how many files a character may have.
+    private static let maximumArrayElements = 300
+    private static let maximumStringBytes = 12_000
+    private static let maximumWalkDepth = 32
 
     static func decodeAndAdapt(at root: URL) throws -> Decoded {
         let url = root.appendingPathComponent("manifest.json")
-        let data = try CharacterPackageMaterializer.readBounded(url, maximum: 256 * 1024, phase: .validate)
+        let data = try CharacterPackageMaterializer.readBounded(url, maximum: CharacterPackageLimits.maximumManifestBytes, phase: .validate)
         let object = try StrictJSON.object(data)
         guard object["schema"] as? String == "joi.character.v1" else {
             throw CharacterPackageImportFailure(.invalidManifest, .validate)
@@ -189,7 +200,7 @@ enum CharacterManifestValidator {
         }
         if canonical {
             try requireExact(keys, required: canonicalRequired, allowed: canonicalAllowed)
-            try rejectForbidden(object, path: [], failureCode: .invalidManifest)
+            try rejectForbidden(object, path: [], failureCode: .invalidManifest, canonicalManifest: true)
             try validateCanonicalShape(object)
             do {
                 return Decoded(manifest: try CharacterCoding.decoder.decode(CharacterPackageManifestV1.self, from: data), legacyReceipt: nil, warnings: [])
@@ -255,6 +266,12 @@ enum CharacterManifestValidator {
               manifest.portraitPath.map(assetPaths.contains) ?? true else {
             throw CharacterPackageImportFailure(.invalidManifest, .validate)
         }
+        // A motion table is a VRM-only renderer graph. Live2D declares its motions
+        // inside its own `.model3.json` closure, and a second mechanism would put
+        // two sources of truth on the same model.
+        if manifest.renderer != .vrm, !manifest.declaredMotions.isEmpty {
+            throw CharacterPackageImportFailure(.invalidRenderer, .validate)
+        }
         switch manifest.renderer {
         case .static:
             guard let portrait = manifest.portraitPath, portrait == manifest.entryPath else {
@@ -267,8 +284,40 @@ enum CharacterManifestValidator {
             guard manifest.entryPath.lowercased().hasSuffix(".vrm") else {
                 throw CharacterPackageImportFailure(.invalidRenderer, .validate)
             }
+            // The extension is a claim; the glTF extensions are the fact. This
+            // stops a `.vrma` renamed to `.vrm` from being loaded as the model,
+            // and vice versa below.
+            let entryFormat = try CharacterMediaValidator.vrmFormat(
+                at: root.appendingPathComponent(manifest.entryPath)
+            )
+            guard entryFormat == .vrm0 || entryFormat == .vrm1 else {
+                throw CharacterPackageImportFailure(.invalidRenderer, .validate)
+            }
             var expectedPaths: Set<String> = [manifest.entryPath]
             if let portrait = manifest.portraitPath { expectedPaths.insert(portrait) }
+            let motions = manifest.declaredMotions
+            guard motions.count <= CharacterPackageLimits.maximumMotionCount else {
+                throw CharacterPackageImportFailure(.invalidRenderer, .validate)
+            }
+            var motionNames = Set<String>()
+            for motion in motions {
+                guard validMotionName(motion.motion),
+                      motionNames.insert(motion.motion).inserted,
+                      motion.animation.lowercased().hasSuffix(".vrma"),
+                      motion.animation != manifest.entryPath,
+                      assetPaths.contains(motion.animation) else {
+                    throw CharacterPackageImportFailure(.invalidRenderer, .validate)
+                }
+                let format = try CharacterMediaValidator.vrmFormat(
+                    at: root.appendingPathComponent(motion.animation)
+                )
+                guard format == .vrma else {
+                    throw CharacterPackageImportFailure(.invalidRenderer, .validate)
+                }
+                expectedPaths.insert(motion.animation)
+            }
+            // Still exact: an undeclared animation sitting in the tree is refused
+            // just as any other unexpected file is.
             guard assetPaths == expectedPaths else {
                 throw CharacterPackageImportFailure(.invalidRenderer, .validate)
             }
@@ -290,14 +339,14 @@ enum CharacterManifestValidator {
     }
 
     private static func decodeCanonicalOnly(at root: URL) throws -> CharacterPackageManifestV1 {
-        let data = try CharacterPackageMaterializer.readBounded(root.appendingPathComponent("manifest.json"), maximum: 256 * 1024, phase: .validate)
+        let data = try CharacterPackageMaterializer.readBounded(root.appendingPathComponent("manifest.json"), maximum: CharacterPackageLimits.maximumManifestBytes, phase: .validate)
         let object = try StrictJSON.object(data)
         let keys = Set(object.keys)
         try requireExact(keys, required: canonicalRequired, allowed: canonicalAllowed)
         guard canonicalFamily.isSubset(of: keys), legacyFamily.intersection(keys).isEmpty else {
             throw CharacterPackageImportFailure(.invalidManifest, .validate)
         }
-        try rejectForbidden(object, path: [], failureCode: .invalidManifest)
+        try rejectForbidden(object, path: [], failureCode: .invalidManifest, canonicalManifest: true)
         try validateCanonicalShape(object)
         do { return try CharacterCoding.decoder.decode(CharacterPackageManifestV1.self, from: data) }
         catch { throw CharacterPackageImportFailure(.invalidManifest, .validate) }
@@ -310,6 +359,18 @@ enum CharacterManifestValidator {
         }
         for asset in assets {
             try requireExact(Set(asset.keys), required: ["path", "mediaType", "sha256"], allowed: ["path", "mediaType", "sha256"])
+        }
+        if let motions = object["motions"] {
+            guard let motions = motions as? [[String: Any]] else {
+                throw CharacterPackageImportFailure(.invalidManifest, .validate)
+            }
+            for motion in motions {
+                try requireExact(
+                    Set(motion.keys),
+                    required: ["motion", "animation"],
+                    allowed: ["motion", "animation", "loop"]
+                )
+            }
         }
         try requireExact(Set(provenance.keys), required: ["author", "license"], allowed: ["author", "license", "source"])
     }
@@ -559,29 +620,68 @@ enum CharacterManifestValidator {
         _ value: Any,
         path: [String],
         depth: Int = 0,
-        failureCode: CharacterPackageImportCode = .unsupportedLegacy
+        failureCode: CharacterPackageImportCode = .unsupportedLegacy,
+        canonicalManifest: Bool = false
     ) throws {
-        guard depth <= 32 else { throw CharacterPackageImportFailure(failureCode, .validate) }
+        guard depth <= maximumWalkDepth else { throw CharacterPackageImportFailure(failureCode, .validate) }
         if let dictionary = value as? [String: Any] {
             for (key, child) in dictionary {
                 let folded = key.lowercased().replacingOccurrences(of: "-", with: "_")
                 if forbiddenFragments.contains(where: { folded.contains($0) }) {
                     throw CharacterPackageImportFailure(failureCode, .validate)
                 }
-                try rejectForbidden(child, path: path + [key], depth: depth + 1, failureCode: failureCode)
+                try rejectForbidden(
+                    child,
+                    path: path + [key],
+                    depth: depth + 1,
+                    failureCode: failureCode,
+                    canonicalManifest: canonicalManifest
+                )
             }
         } else if let array = value as? [Any] {
-            guard array.count <= 300 else { throw CharacterPackageImportFailure(failureCode, .validate) }
-            for child in array { try rejectForbidden(child, path: path, depth: depth + 1, failureCode: failureCode) }
-        } else if let string = value as? String, string.utf8.count > 12_000 {
+            let bound = arrayBound(path: path, depth: depth, canonicalManifest: canonicalManifest)
+            guard array.count <= bound else { throw CharacterPackageImportFailure(failureCode, .validate) }
+            for child in array {
+                try rejectForbidden(
+                    child,
+                    path: path,
+                    depth: depth + 1,
+                    failureCode: failureCode,
+                    canonicalManifest: canonicalManifest
+                )
+            }
+        } else if let string = value as? String, string.utf8.count > maximumStringBytes {
             throw CharacterPackageImportFailure(failureCode, .validate)
         }
+    }
+
+    /// The declared asset list is the one array the contract gives a size of its
+    /// own: the schema's `assets.maxItems`, `CharacterPackageLimits.maximumFileCount`,
+    /// the ZIP preflight and the tree verifier all say 2000, so the generic guard
+    /// must not quietly say 300 (DEC-028).
+    ///
+    /// The exemption is that array and nothing else. `depth == 1` is a member of
+    /// the root object, so an array nested inside an asset entry reaches here
+    /// carrying the same path but a greater depth, and keeps the generic bound.
+    private static func arrayBound(path: [String], depth: Int, canonicalManifest: Bool) -> Int {
+        guard canonicalManifest, depth == 1, path == ["assets"] else { return maximumArrayElements }
+        return CharacterPackageLimits.maximumFileCount
     }
 
     private static func requireExact(_ actual: Set<String>, required: Set<String>, allowed: Set<String>) throws {
         guard required.isSubset(of: actual), actual.isSubset(of: allowed) else {
             throw CharacterPackageImportFailure(.invalidManifest, .validate)
         }
+    }
+
+    /// Motion names are triggered by product code and appear in logs, so they are
+    /// deliberately narrower than an asset path: lowercase ASCII, digits, `_` and
+    /// `-`, starting alphanumeric.
+    private static func validMotionName(_ value: String) -> Bool {
+        guard !value.isEmpty, value.count <= 64, let first = value.unicodeScalars.first else { return false }
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789_-")
+        let leading = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789")
+        return leading.contains(first) && value.unicodeScalars.allSatisfy(allowed.contains)
     }
 
     private static func validIdentifier(_ value: String, maximum: Int) -> Bool {
@@ -703,6 +803,20 @@ enum CharacterMediaValidator {
         guard valid else { throw CharacterPackageImportFailure(.invalidManifest, .validate) }
     }
 
+    /// Which VRM flavour a GLB actually is, read from its own glTF extensions
+    /// rather than from its file name. Only the JSON chunk is read, so this stays
+    /// cheap on a multi-megabyte animation whose bulk is binary.
+    static func vrmFormat(at url: URL) throws -> VRMNativeFormat {
+        let size = try CharacterPackageMaterializer.readRange(url, offset: 0, count: 0, phase: .validate).fileSize
+        do {
+            return try VRMNativeMetadataInspector().inspect(vrmMetadataEnvelope(url: url, size: size)).format
+        } catch let failure as CharacterPackageImportFailure {
+            throw failure
+        } catch {
+            throw CharacterPackageImportFailure(.invalidRenderer, .validate)
+        }
+    }
+
     private static func vrmMetadataEnvelope(url: URL, size: Int) throws -> Data {
         let firstCount = min(size, 20)
         let header = try CharacterPackageMaterializer.readRange(url, offset: 0, count: firstCount, phase: .validate).data
@@ -803,7 +917,7 @@ enum CharacterTreeVerifier {
             }
             bytes += size
         }
-        let manifestData = try CharacterPackageMaterializer.readBounded(root.appendingPathComponent("manifest.json"), maximum: 256 * 1024, phase: .activation)
+        let manifestData = try CharacterPackageMaterializer.readBounded(root.appendingPathComponent("manifest.json"), maximum: CharacterPackageLimits.maximumManifestBytes, phase: .activation)
         return CharacterTreeVerification(
             manifest: manifest,
             receipt: CharacterPackageValidationReceiptV1(

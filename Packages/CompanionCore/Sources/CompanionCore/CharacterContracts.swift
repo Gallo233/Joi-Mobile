@@ -53,6 +53,36 @@ public struct CharacterAssetV1: Codable, Equatable, Sendable {
     }
 }
 
+/// One semantic motion a character can be asked to play, and the animation
+/// clip that performs it.
+///
+/// A `.vrm` file carries a rig and no animation at all, so a VRM character's
+/// idle, greeting and dance clips are separate `.vrma` assets. This mapping is
+/// what lets the product ask for `greet` without knowing a file name, and it is
+/// also the renderer graph that decides which animation files may enter runtime
+/// content — see DEC-024. Only a `vrm` package may declare motions.
+public struct CharacterMotionV1: Codable, Equatable, Sendable {
+    /// Semantic name the product triggers: `idle`, `greet`, `happy`, …
+    public let motion: String
+    /// Package-relative path of a `.vrma` asset that is also declared in `assets`.
+    public let animation: String
+    /// Whether the clip plays continuously. Absent means it plays once.
+    public let loop: Bool?
+
+    public init(motion: String, animation: String, loop: Bool? = nil) {
+        self.motion = motion
+        self.animation = animation
+        self.loop = loop
+    }
+
+    public var loops: Bool { loop ?? false }
+
+    /// The motion a character holds between events. Named here because both the
+    /// session (deciding what a tap plays) and the renderer (deciding what to
+    /// return to) need the same answer.
+    public static let idleName = "idle"
+}
+
 public struct CharacterProvenanceV1: Codable, Equatable, Sendable {
     public let author: String
     public let license: String
@@ -75,8 +105,14 @@ public struct CharacterPackageManifestV1: Codable, Equatable, Sendable {
     public let entryPath: String
     public let portraitPath: String?
     public let locales: [String]
+    /// Optional so every package that predates DEC-024 keeps decoding, and so an
+    /// absent table is encoded as an absent key rather than an empty array.
+    /// Read it through ``declaredMotions``.
+    public let motions: [CharacterMotionV1]?
     public let assets: [CharacterAssetV1]
     public let provenance: CharacterProvenanceV1
+
+    public var declaredMotions: [CharacterMotionV1] { motions ?? [] }
 
     public init(
         schema: String = "joi.character.v1",
@@ -88,6 +124,7 @@ public struct CharacterPackageManifestV1: Codable, Equatable, Sendable {
         entryPath: String,
         portraitPath: String? = nil,
         locales: [String],
+        motions: [CharacterMotionV1]? = nil,
         assets: [CharacterAssetV1],
         provenance: CharacterProvenanceV1
     ) {
@@ -100,6 +137,7 @@ public struct CharacterPackageManifestV1: Codable, Equatable, Sendable {
         self.entryPath = entryPath
         self.portraitPath = portraitPath
         self.locales = locales
+        self.motions = motions
         self.assets = assets
         self.provenance = provenance
     }

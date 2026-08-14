@@ -70,6 +70,13 @@ final class AppModel {
     /// never outlive the activation it is drawing.
     private(set) var stageContent: CharacterContentAccess?
 
+    /// The motion the character was last asked to play. Presentation only: a
+    /// renderer that cannot play it, or a package that never declared it,
+    /// changes nothing about the session, the transcript or the turn.
+    private(set) var stageMotionCue: StageMotionCue?
+    @ObservationIgnored private var stageMotionSequence = 0
+    @ObservationIgnored private var stageTapIndex = 0
+
     /// Composer text. Editable draft only; never a transcript line.
     var chatDraft: String = ""
     /// App projection of the session store's accepted transcript ordering.
@@ -164,6 +171,27 @@ final class AppModel {
             return
         }
         startActivation(entry)
+    }
+
+    /// Asks the stage to play a declared motion. The name is semantic — `greet`,
+    /// `happy` — and a character that never declared it simply does not move,
+    /// which is why nothing here needs to know what the package contains.
+    func requestStageMotion(_ motion: String) {
+        stageMotionSequence += 1
+        stageMotionCue = StageMotionCue(motion: motion, sequence: stageMotionSequence)
+    }
+
+    /// A tap on the character walks its declared non-idle motions in order, so
+    /// every motion a package ships is reachable without this app inventing a
+    /// gesture vocabulary the package never declared. A character with no
+    /// gesture motions simply does not move.
+    func tapStage() {
+        let gestures = (stageContent?.motions ?? [])
+            .filter { $0.motion != CharacterMotionV1.idleName && !$0.loops }
+        guard !gestures.isEmpty else { return }
+        let motion = gestures[stageTapIndex % gestures.count]
+        stageTapIndex += 1
+        requestStageMotion(motion.motion)
     }
 
     func toggleStageFraming() { stageFraming = stageFraming.next }
@@ -271,6 +299,12 @@ final class AppModel {
                     // explicit `voiceLine` is ever sent to the voice.
                     if entry.author == .companion, let line = event.voiceLine {
                         speechPlayer.speak(line)
+                    }
+                    // The character reacts to its own accepted reply, for the
+                    // same reason speech follows acceptance: a superseded or
+                    // cancelled line must not animate anything.
+                    if entry.author == .companion {
+                        requestStageMotion("happy")
                     }
                 }
                 latestPhase = event.phase
@@ -488,6 +522,10 @@ final class AppModel {
             // Read access is issued after the CAS, from the handle that just won
             // it, so the stage draws the character the session actually holds.
             stageContent = try? await installer.contentAccess(for: handle)
+            // A character that just came on stage greets, if it declared how.
+            // The cue is issued after the content access so the surface being
+            // rebuilt for the new character is the one that receives it.
+            requestStageMotion("greet")
             // Remembered so the companion the user was talking to is still there
             // after a restart. Only the identifier is stored; the installer
             // revalidates it on the next launch before anything is drawn.

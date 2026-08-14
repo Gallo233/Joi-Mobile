@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Editable Simplified Chinese product copy, one file, no literals in the
+  composables.
+
+  The strings are taken verbatim from the iOS String Catalog rather than
+  retranslated: a companion that phrases the same thing two ways on two phones
+  reads as two products. Additional languages and full accessibility validation
+  are deferred on this platform exactly as they are on iOS.
+-->
+<resources>
+    <string name="app_name">Joi</string>
+
+    <!-- The two primary surfaces. Nothing else is a primary surface. -->
+    <string name="surface_chat">聊天</string>
+    <string name="surface_map">地图</string>
+
+    <string name="session_local">本地会话</string>
+    <string name="profile_panel">个人面板</string>
+    <string name="character_stage_native">原生角色舞台</string>
+    <string name="current_character">当前角色</string>
+    <string name="no_installed_characters">尚无已安装角色</string>
+
+    <!-- The composer placeholder follows the current character's name. -->
+    <string name="composer_placeholder">给 %1$s 发消息</string>
+    <string name="push_to_talk">按住说话</string>
+    <string name="transcript_empty">还没有对话记录。</string>
+
+    <string name="map_cached_walk">已缓存的文化步行</string>
+    <string name="map_offline_available">离线可用</string>
+    <string name="map_route_preview">路线预览</string>
+    <string name="map_view_sources">查看来源</string>
+
+    <!--
+      Said plainly rather than hidden behind a spinner. There is no renderer on
+      this platform yet, and a shell that implied one would be the kind of claim
+      this repository keeps out of its status documents.
+    -->
+    <string name="stage_placeholder_notice">静态占位：Android 端尚未接入原生角色运行时。</string>
+    <string name="composer_placeholder_notice">占位：本机对话尚未接线。</string>
+</resources>

@@ -1,0 +1,108 @@
+{
+  "schema": "joi.conformance.sse-framing.v1",
+  "description": "Server-sent-event framing for /v1/chat/streams. Joi frames this stream itself on every platform instead of using a line-reading convenience API, because the common ones do not emit empty lines — and an empty line is exactly what terminates an SSE frame. Using one concatenates consecutive events into a single invalid payload, which unit tests over hand-written single frames do not catch and a live stream fails on every turn.",
+  "notes": [
+    "The runner concatenates `chunks` (UTF-8) or `chunksBase64` into one byte sequence and feeds it to the framer one byte at a time, collecting each payload the framer emits, then flushes the stream end. Chunk boundaries carry no meaning: they exist so a case can place a boundary somewhere hostile.",
+    "`payloads` is the exact ordered list of `data:` payloads the framer must emit. Multi-line data is joined with a single U+000A.",
+    "`id:` and `event:` lines are read and discarded: the payload itself carries the authoritative event, request and thread identity, so retaining a transport-level id would create a second, weaker source of truth.",
+    "A frame whose accumulated data payload is empty produces no event at all rather than an empty one.",
+    "Contractual but not vectored, because the literal case would be half a megabyte: a single line longer than 512 KiB is a malformed stream, not something to buffer without bound."
+  ],
+  "cases": [
+    {
+      "id": "two-events",
+      "chunks": ["data: {\"contentState\":\"acceptedInput\"}\n\ndata: {\"contentState\":\"acceptedFinal\"}\n\n"],
+      "payloads": ["{\"contentState\":\"acceptedInput\"}", "{\"contentState\":\"acceptedFinal\"}"],
+      "note": "The regression that motivated an owned framer. A line reader that drops empty lines returns one payload here — the two objects glued together — and every turn fails as malformed."
+    },
+    {
+      "id": "crlf-line-endings",
+      "chunks": ["data: one\r\n\r\ndata: two\r\n\r\n"],
+      "payloads": ["one", "two"],
+      "note": "The CR belongs to the delimiter, not to the payload."
+    },
+    {
+      "id": "multi-line-data",
+      "chunks": ["data: first\ndata: second\n\n"],
+      "payloads": ["first\nsecond"]
+    },
+    {
+      "id": "id-and-event-discarded",
+      "chunks": ["id: 7\nevent: message\ndata: payload\n\n"],
+      "payloads": ["payload"]
+    },
+    {
+      "id": "comment-line-ignored",
+      "chunks": [": keep-alive\ndata: payload\n\n"],
+      "payloads": ["payload"],
+      "note": "A comment line is not blank, so it must not close the frame."
+    },
+    {
+      "id": "field-without-data-produces-nothing",
+      "chunks": ["event: ping\n\n"],
+      "payloads": []
+    },
+    {
+      "id": "empty-data-value",
+      "chunks": ["data:\n\n"],
+      "payloads": [],
+      "note": "An empty payload is not an event."
+    },
+    {
+      "id": "blank-lines-only",
+      "chunks": ["\n\n\n"],
+      "payloads": []
+    },
+    {
+      "id": "extra-blank-lines-between-events",
+      "chunks": ["data: one\n\n\n\ndata: two\n\n"],
+      "payloads": ["one", "two"]
+    },
+    {
+      "id": "one-structural-space",
+      "chunks": ["data:  two leading spaces\n\n"],
+      "payloads": [" two leading spaces"],
+      "note": "Exactly one space after the colon is grammar; any further space is payload."
+    },
+    {
+      "id": "no-space-after-colon",
+      "chunks": ["data:tight\n\n"],
+      "payloads": ["tight"]
+    },
+    {
+      "id": "split-mid-field-name",
+      "chunks": ["da", "ta: hel", "lo\n", "\n"],
+      "payloads": ["hello"],
+      "note": "A network chunk boundary is not a token boundary."
+    },
+    {
+      "id": "split-mid-utf8-character",
+      "chunksBase64": ["ZGF0YTog6A==", "r7TmmI4KCg=="],
+      "payloads": ["说明"],
+      "note": "The boundary falls inside the three bytes of U+8BF4. A framer that decodes each chunk to text as it arrives corrupts the character here; one that decodes at the line boundary does not."
+    },
+    {
+      "id": "stream-ends-without-blank-line",
+      "chunks": ["data: final"],
+      "payloads": ["final"],
+      "note": "A complete final frame is still delivered when the connection ends without its terminating blank line."
+    },
+    {
+      "id": "stream-ends-mid-non-data-line",
+      "chunks": ["data: kept\nevent: par"],
+      "payloads": ["kept"],
+      "note": "The truncated trailing line contributes nothing, but the data already accumulated for that frame is still delivered."
+    },
+    {
+      "id": "stream-ends-mid-data-line",
+      "chunks": ["data: kept\n\ndata: trunc"],
+      "payloads": ["kept", "trunc"],
+      "note": "A truncated `data:` line is indistinguishable from a complete one at the transport layer. It is delivered, and the payload's own JSON validity is what rejects it."
+    },
+    {
+      "id": "byte-at-a-time-whole-stream",
+      "chunks": ["d", "a", "t", "a", ":", " ", "x", "\n", "\n"],
+      "payloads": ["x"]
+    }
+  ]
+}

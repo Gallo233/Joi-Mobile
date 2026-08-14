@@ -13,7 +13,12 @@ set -euo pipefail
 
 DEVICE="${1:-iPhone 17 Pro}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DERIVED="${JOI_DERIVED_PATH:-/tmp/JoiMobileNative}"
+# Deliberately under Xcode's own DerivedData root rather than /tmp. Script
+# sandboxing allows a build phase to write anywhere under /tmp, so a phase that
+# creates an undeclared directory passes here and fails the moment the user
+# presses Run in Xcode. Building where Xcode builds means this script sees the
+# same sandbox rules the IDE applies. Still outside the repository.
+DERIVED="${JOI_DERIVED_PATH:-$HOME/Library/Developer/Xcode/DerivedData/JoiMobileNative}"
 BUNDLE="com.joi.mobile"
 
 cd "$REPO"

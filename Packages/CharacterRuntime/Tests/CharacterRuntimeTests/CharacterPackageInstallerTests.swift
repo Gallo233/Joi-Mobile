@@ -803,6 +803,218 @@ final class CharacterPackageInstallerTests: XCTestCase {
         }
         await installer.releaseActivation(handle)
     }
+
+    // MARK: - DEC-024 — a VRM package declares its own motions
+
+    /// A `.vrm` file carries no animation, so idle and greet are separate
+    /// `.vrma` assets. The package must install, activate, and hand the renderer
+    /// a motion table it can play without guessing a path.
+    func testVRMPackageWithDeclaredMotionsInstallsAndCarriesItsMotionTable() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let model = minimalVRM()
+        let idle = minimalVRMA()
+        let greet = minimalVRMA(sequence: 1)
+        let archive = fixture.file("motions.joi-character", storedZip([
+            .file("manifest.json", canonicalVRMManifest(
+                motions: [
+                    ["motion": "idle", "animation": "motions/idle.vrma", "loop": true],
+                    ["motion": "greet", "animation": "motions/greet.vrma"],
+                ],
+                assets: [
+                    ("model.vrm", "model/gltf-binary", model),
+                    ("portrait.png", "image/png", validPNG),
+                    ("motions/idle.vrma", "model/gltf-binary", idle),
+                    ("motions/greet.vrma", "model/gltf-binary", greet),
+                ]
+            )),
+            .file("model.vrm", model),
+            .file("portrait.png", validPNG),
+            .file("motions/idle.vrma", idle),
+            .file("motions/greet.vrma", greet),
+        ]))
+        let installer = CharacterPackageInstaller(root: fixture.directory("store"))
+
+        let installed = try await installer.install(.joiCharacterArchive(archive))
+        XCTAssertNil(installed.disposition, "a rights-cleared package is not quarantined")
+        XCTAssertEqual(installed.manifest.declaredMotions.map(\.motion), ["idle", "greet"])
+
+        let handle = try await installer.prepareActivation(installed.installationID)
+        let access = try await installer.contentAccess(for: handle)
+        XCTAssertEqual(access.renderer, .vrm)
+        XCTAssertEqual(access.motions.map(\.motion), ["idle", "greet"])
+        XCTAssertEqual(access.motions.first?.loops, true)
+        XCTAssertEqual(access.motions.last?.loops, false)
+        let idleURL = try XCTUnwrap(access.animationURL(forMotion: "idle"))
+        XCTAssertTrue(FileManager.default.isReadableFile(atPath: idleURL.path))
+        XCTAssertNil(access.animationURL(forMotion: "dance"))
+        await installer.releaseActivation(handle)
+    }
+
+    /// The asset closure stays exact. Admitting animation must not degrade into
+    /// "any extra file in the tree is fine".
+    func testUndeclaredAnimationInTheTreeIsStillRefused() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let model = minimalVRM()
+        let idle = minimalVRMA()
+        let archive = fixture.file("extra.joi-character", storedZip([
+            .file("manifest.json", canonicalVRMManifest(
+                motions: [["motion": "idle", "animation": "motions/idle.vrma", "loop": true]],
+                assets: [
+                    ("model.vrm", "model/gltf-binary", model),
+                    ("portrait.png", "image/png", validPNG),
+                    ("motions/idle.vrma", "model/gltf-binary", idle),
+                ]
+            )),
+            .file("model.vrm", model),
+            .file("portrait.png", validPNG),
+            .file("motions/idle.vrma", idle),
+            // Present on disk, absent from `assets`.
+            .file("motions/stowaway.vrma", minimalVRMA(sequence: 2)),
+        ]))
+
+        await XCTAssertThrowsPackageFailure(.invalidManifest) {
+            _ = try await CharacterPackageInstaller(root: fixture.directory("store"))
+                .preview(.joiCharacterArchive(archive))
+        }
+    }
+
+    /// A motion may only name an asset the manifest already declares and hashes.
+    func testMotionNamingAnUndeclaredAssetIsRefused() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let model = minimalVRM()
+        let archive = fixture.file("dangling.joi-character", storedZip([
+            .file("manifest.json", canonicalVRMManifest(
+                motions: [["motion": "idle", "animation": "motions/missing.vrma", "loop": true]],
+                assets: [
+                    ("model.vrm", "model/gltf-binary", model),
+                    ("portrait.png", "image/png", validPNG),
+                ]
+            )),
+            .file("model.vrm", model),
+            .file("portrait.png", validPNG),
+        ]))
+
+        await XCTAssertThrowsPackageFailure(.invalidRenderer) {
+            _ = try await CharacterPackageInstaller(root: fixture.directory("store"))
+                .preview(.joiCharacterArchive(archive))
+        }
+    }
+
+    /// The extension is a claim; the glTF extensions are the fact. A model
+    /// renamed `.vrma` is not an animation, and an animation is not a model.
+    func testMotionFormatIsReadFromTheFileNotItsName() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let model = minimalVRM()
+        let disguised = fixture.file("disguised.joi-character", storedZip([
+            .file("manifest.json", canonicalVRMManifest(
+                motions: [["motion": "idle", "animation": "motions/idle.vrma", "loop": true]],
+                assets: [
+                    ("model.vrm", "model/gltf-binary", model),
+                    ("portrait.png", "image/png", validPNG),
+                    // A VRM model wearing a .vrma name.
+                    ("motions/idle.vrma", "model/gltf-binary", model),
+                ]
+            )),
+            .file("model.vrm", model),
+            .file("portrait.png", validPNG),
+            .file("motions/idle.vrma", model),
+        ]))
+        await XCTAssertThrowsPackageFailure(.invalidRenderer) {
+            _ = try await CharacterPackageInstaller(root: fixture.directory("store"))
+                .preview(.joiCharacterArchive(disguised))
+        }
+
+        let animation = minimalVRMA()
+        let swapped = fixture.file("swapped.joi-character", storedZip([
+            .file("manifest.json", canonicalVRMManifest(
+                portraitPath: nil,
+                assets: [("model.vrm", "model/gltf-binary", animation)]
+            )),
+            // An animation clip wearing the model's name.
+            .file("model.vrm", animation),
+        ]))
+        await XCTAssertThrowsPackageFailure(.invalidRenderer) {
+            _ = try await CharacterPackageInstaller(root: fixture.directory("store"))
+                .preview(.joiCharacterArchive(swapped))
+        }
+    }
+
+    /// Names are triggered by product code, so they are bounded, unique and
+    /// lowercase ASCII rather than free text.
+    func testDuplicateAndMalformedMotionNamesAreRefused() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let model = minimalVRM()
+        let idle = minimalVRMA()
+        let greet = minimalVRMA(sequence: 1)
+
+        func archive(_ name: String, _ motions: [[String: Any]]) -> URL {
+            fixture.file("\(name).joi-character", storedZip([
+                .file("manifest.json", canonicalVRMManifest(
+                    motions: motions,
+                    assets: [
+                        ("model.vrm", "model/gltf-binary", model),
+                        ("portrait.png", "image/png", validPNG),
+                        ("motions/idle.vrma", "model/gltf-binary", idle),
+                        ("motions/greet.vrma", "model/gltf-binary", greet),
+                    ]
+                )),
+                .file("model.vrm", model),
+                .file("portrait.png", validPNG),
+                .file("motions/idle.vrma", idle),
+                .file("motions/greet.vrma", greet),
+            ]))
+        }
+
+        let duplicate = archive("duplicate", [
+            ["motion": "idle", "animation": "motions/idle.vrma", "loop": true],
+            ["motion": "idle", "animation": "motions/greet.vrma"],
+        ])
+        await XCTAssertThrowsPackageFailure(.invalidRenderer) {
+            _ = try await CharacterPackageInstaller(root: fixture.directory("store-a"))
+                .preview(.joiCharacterArchive(duplicate))
+        }
+
+        let shouty = archive("shouty", [
+            ["motion": "Idle Dance", "animation": "motions/idle.vrma", "loop": true],
+            ["motion": "greet", "animation": "motions/greet.vrma"],
+        ])
+        await XCTAssertThrowsPackageFailure(.invalidRenderer) {
+            _ = try await CharacterPackageInstaller(root: fixture.directory("store-b"))
+                .preview(.joiCharacterArchive(shouty))
+        }
+
+        let unknownKey = archive("unknown-key", [
+            ["motion": "idle", "animation": "motions/idle.vrma", "loop": true, "duration_ms": 7_270],
+            ["motion": "greet", "animation": "motions/greet.vrma"],
+        ])
+        await XCTAssertThrowsPackageFailure(.invalidManifest) {
+            _ = try await CharacterPackageInstaller(root: fixture.directory("store-c"))
+                .preview(.joiCharacterArchive(unknownKey))
+        }
+    }
+
+    /// Live2D declares its motions inside `.model3.json`. A second mechanism on
+    /// the same model would create two sources of truth.
+    func testOnlyAVRMPackageMayDeclareMotions() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        var object = canonicalStaticObject()
+        object["motions"] = [["motion": "idle", "animation": "motions/idle.vrma", "loop": true]]
+        let archive = fixture.file("static-motions.joi-character", storedZip([
+            .file("manifest.json", json(object)),
+            .file("portrait.png", validPNG),
+        ]))
+
+        await XCTAssertThrowsPackageFailure(.invalidRenderer) {
+            _ = try await CharacterPackageInstaller(root: fixture.directory("store"))
+                .preview(.joiCharacterArchive(archive))
+        }
+    }
 }
 
 private final class SourceMutationObserver: @unchecked Sendable {
@@ -961,16 +1173,50 @@ private func live2DArchive(
     ] + extra)
 }
 
-private func minimalVRM() -> Data {
-    var jsonData = json([
-        "asset": ["version": "2.0"],
-        "extensionsUsed": ["VRMC_vrm"],
-        "extensions": ["VRMC_vrm": ["humanoid": ["humanBones": [:]], "expressions": ["preset": [:]]]],
-    ])
+/// A canonical VRM manifest with declared provenance, so the package is
+/// rights-cleared and may be activated rather than quarantined.
+private func canonicalVRMManifest(
+    entryPath: String = "model.vrm",
+    portraitPath: String? = "portrait.png",
+    motions: [[String: Any]]? = nil,
+    assets: [(String, String, Data)]
+) -> Data {
+    var object: [String: Any] = [
+        "schema": "joi.character.v1", "packageID": "fixture.vrm", "characterID": "fixture.avatar",
+        "version": "1.0.0", "displayName": "Fixture VRM", "renderer": "vrm",
+        "entryPath": entryPath, "locales": ["zh-Hans"],
+        "assets": assets.map { ["path": $0.0, "mediaType": $0.1, "sha256": sha($0.2)] },
+        "provenance": ["author": "Test", "license": "Self-authored test fixture"],
+    ]
+    if let portraitPath { object["portraitPath"] = portraitPath }
+    if let motions { object["motions"] = motions }
+    return json(object)
+}
+
+private func glb(_ object: [String: Any]) -> Data {
+    var jsonData = json(object)
     while !jsonData.count.isMultiple(of: 4) { jsonData.append(0x20) }
     var result = Data()
     result.u32(0x4654_6c67); result.u32(2); result.u32(UInt32(20 + jsonData.count)); result.u32(UInt32(jsonData.count)); result.u32(0x4e4f_534a); result.append(jsonData)
     return result
+}
+
+private func minimalVRM() -> Data {
+    glb([
+        "asset": ["version": "2.0"],
+        "extensionsUsed": ["VRMC_vrm"],
+        "extensions": ["VRMC_vrm": ["humanoid": ["humanBones": [:]], "expressions": ["preset": [:]]]],
+    ])
+}
+
+/// A VRMA clip. `sequence` only varies the bytes so two motions in one package
+/// hash differently, which is what a real package looks like.
+private func minimalVRMA(sequence: Int = 0) -> Data {
+    glb([
+        "asset": ["version": "2.0", "generator": "joi-mobile-test-\(sequence)"],
+        "extensionsUsed": ["VRMC_vrm_animation"],
+        "extensions": ["VRMC_vrm_animation": ["humanoid": ["humanBones": [:]]]],
+    ])
 }
 
 private func json(_ object: Any) -> Data {

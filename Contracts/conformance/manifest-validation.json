@@ -1,0 +1,226 @@
+{
+  "schema": "joi.conformance.manifest-admission.v1",
+  "description": "Document-level admission of a character manifest: what a platform decides about `manifest.json` before it has looked at a single asset file. This is the boundary where the canonical mobile envelope is separated from the legacy desktop envelope, where unknown and state-bearing keys are refused, and where a malformed document becomes a stable code instead of a decoder exception.",
+  "stage": "admission",
+  "notes": [
+    "`accept` means the document is admitted for asset verification. It does NOT mean the package installs: renderer-graph closure, per-asset hashes, media magic bytes and tree exactness are a later stage and are not vectored here yet.",
+    "The runner writes `document` to `manifest.json` in an otherwise empty directory and admits that directory. A case that reaches the filesystem has already failed: it will report a code from the read path instead of the expected one.",
+    "Layering: the JSON Schema in Contracts/character-package-manifest-v1.schema.json remains the shape contract and both platforms should run it. These vectors cover what the schema cannot express — duplicate keys, envelope discrimination, forbidden key fragments, and the exact code each failure produces.",
+    "One bound is enforced but not vectored, because a literal case would be 12 KB of filler: any string value over 12000 UTF-8 bytes is refused during the forbidden-content walk.",
+    "The declared `assets` array is bounded by the contract's file count (2000), not by the 300-element generic array guard that governs every other array in the document — see DEC-028. Neither bound is vectored here: a 2000-asset case is a quarter of a megabyte of filler no reviewer would read. The numbers are asserted directly in both test twins instead — `CrossPlatformConformanceTests.testDeclaredAssetListIsBoundedByTheContractAndNotByTheGenericArrayGuard` and its Kotlin counterpart — together with an assertion that every other array stayed at 300, so a later change cannot remove the guard while believing it corrected it.",
+    "Measured on 2026-08-13, before and after DEC-028: 300 admitted / 301 refused before, 2000 admitted / 2001 refused after, with a 301-element array nested *inside* an asset entry still refused both times. The exemption is the top-level `assets` array of a canonical manifest and nothing else — not a nested array, not a legacy document, not a JSON file carried as package content.",
+    "The document itself is bounded at 1 MiB (DEC-028; it was 256 KiB, which refused the contract's own 2000 assets at any realistic path length). Above that bound the two platforms answer with different codes, and it is the read-path boundary noted above rather than a semantic divergence: iOS reaches the document through a bounded read of `manifest.json` and answers `unsafeArchive`, while a platform handed the bytes answers `invalidManifest` from the scanner. 2000 assets fit while paths average under roughly 400 characters, against a schema maximum of 512 — beyond that the byte bound decides, not the count.",
+    "There is no legacy `accept` case. Legacy adaptation reads the model tree before it can succeed, so every admissible legacy outcome belongs to the later stage. Every legacy case here fails before any file is opened."
+  ],
+  "cases": [
+    {
+      "id": "canonical-static",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"joi.fixture.static\",\"characterID\":\"joi.starter\",\"version\":\"1.0.0\",\"displayName\":\"Joi\",\"renderer\":\"static\",\"entryPath\":\"portrait.png\",\"portraitPath\":\"portrait.png\",\"locales\":[\"zh-Hans\"],\"assets\":[{\"path\":\"portrait.png\",\"mediaType\":\"image/png\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"}],\"provenance\":{\"author\":\"Joi Mobile fixture\",\"license\":\"Repository test metadata only\",\"source\":null}}",
+      "expect": "accept",
+      "envelope": "canonical"
+    },
+    {
+      "id": "canonical-without-portrait",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"joi.fixture.vrm\",\"characterID\":\"joi.fixture.vrm\",\"version\":\"1.0.0\",\"displayName\":\"Joi\",\"renderer\":\"vrm\",\"entryPath\":\"model.vrm\",\"locales\":[\"zh-Hans\"],\"assets\":[{\"path\":\"model.vrm\",\"mediaType\":\"model/gltf-binary\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"}],\"provenance\":{\"author\":\"Joi Mobile fixture\",\"license\":\"Repository test metadata only\"}}",
+      "expect": "accept",
+      "envelope": "canonical",
+      "note": "`portraitPath` and `provenance.source` are optional and may be absent rather than null."
+    },
+    {
+      "id": "canonical-vrm-motions",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"joi.fixture.vrm\",\"characterID\":\"joi.fixture.vrm\",\"version\":\"1.0.0\",\"displayName\":\"Joi VRM\",\"renderer\":\"vrm\",\"entryPath\":\"model.vrm\",\"portraitPath\":\"portrait.png\",\"locales\":[\"zh-Hans\"],\"motions\":[{\"motion\":\"idle\",\"animation\":\"motions/idle.vrma\",\"loop\":true},{\"motion\":\"greet\",\"animation\":\"motions/greet.vrma\"}],\"assets\":[{\"path\":\"model.vrm\",\"mediaType\":\"model/gltf-binary\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"},{\"path\":\"portrait.png\",\"mediaType\":\"image/png\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"},{\"path\":\"motions/idle.vrma\",\"mediaType\":\"model/gltf-binary\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"},{\"path\":\"motions/greet.vrma\",\"mediaType\":\"model/gltf-binary\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"}],\"provenance\":{\"author\":\"Joi Mobile fixture\",\"license\":\"Repository test metadata only\",\"source\":\"https://example.invalid/characters/fixture\"}}",
+      "expect": "accept",
+      "envelope": "canonical"
+    },
+    {
+      "id": "canonical-empty-motions",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"joi.fixture.vrm\",\"characterID\":\"joi.fixture.vrm\",\"version\":\"1.0.0\",\"displayName\":\"Joi\",\"renderer\":\"vrm\",\"entryPath\":\"model.vrm\",\"locales\":[\"zh-Hans\"],\"motions\":[],\"assets\":[{\"path\":\"model.vrm\",\"mediaType\":\"model/gltf-binary\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"}],\"provenance\":{\"author\":\"Joi Mobile fixture\",\"license\":\"Repository test metadata only\"}}",
+      "expect": "accept",
+      "envelope": "canonical",
+      "note": "An explicitly empty motion table is a package that declares no motions, not a malformed one."
+    },
+    {
+      "id": "wrong-schema-label",
+      "document": "{\"schema\":\"joi.character.v2\",\"packageID\":\"p\",\"characterID\":\"c\",\"version\":\"1\",\"displayName\":\"J\",\"renderer\":\"static\",\"entryPath\":\"p.png\",\"locales\":[\"zh-Hans\"],\"assets\":[],\"provenance\":{\"author\":\"a\",\"license\":\"l\"}}",
+      "expect": "invalidManifest",
+      "note": "The schema label is checked before the envelope is classified, so a future version is refused rather than guessed at."
+    },
+    {
+      "id": "missing-required-key",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"p\",\"characterID\":\"c\",\"version\":\"1\",\"displayName\":\"J\",\"renderer\":\"static\",\"entryPath\":\"p.png\",\"assets\":[],\"provenance\":{\"author\":\"a\",\"license\":\"l\"}}",
+      "expect": "invalidManifest",
+      "note": "`locales` is absent. The canonical family is still present, so this is a malformed canonical document rather than an unclassifiable one."
+    },
+    {
+      "id": "unknown-top-level-key",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"p\",\"characterID\":\"c\",\"version\":\"1\",\"displayName\":\"J\",\"renderer\":\"static\",\"entryPath\":\"p.png\",\"locales\":[\"zh-Hans\"],\"assets\":[],\"provenance\":{\"author\":\"a\",\"license\":\"l\"},\"experimental\":true}",
+      "expect": "invalidManifest",
+      "note": "Unknown keys are refused, not ignored. A permissive decoder would silently drop this and install a package whose author believed the key meant something."
+    },
+    {
+      "id": "both-envelopes",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"p\",\"characterID\":\"c\",\"version\":\"1\",\"displayName\":\"J\",\"renderer\":\"static\",\"entryPath\":\"p.png\",\"locales\":[\"zh-Hans\"],\"assets\":[],\"provenance\":{\"author\":\"a\",\"license\":\"l\"},\"id\":\"x\",\"identity\":{\"name\":\"n\"},\"appearance\":{\"model_type\":\"static\"}}",
+      "expect": "invalidManifest",
+      "note": "Desktop and mobile share the `joi.character.v1` label for incompatible envelopes, so a document matching both shapes must be refused before decoding rather than resolved by preference."
+    },
+    {
+      "id": "neither-envelope",
+      "document": "{\"schema\":\"joi.character.v1\",\"name\":\"Joi\",\"model\":\"model.vrm\"}",
+      "expect": "invalidManifest",
+      "note": "Matching neither family is the same refusal as matching both."
+    },
+    {
+      "id": "legacy-missing-appearance",
+      "document": "{\"schema\":\"joi.character.v1\",\"id\":\"fixture.desktop\",\"version\":\"1.0.0\",\"locale\":\"zh\",\"identity\":{\"name\":\"桌面角色\"}}",
+      "expect": "invalidManifest",
+      "note": "An almost-legacy document is unclassifiable, not unsupported-legacy: the discriminator runs before either branch, so the code is `invalidManifest`."
+    },
+    {
+      "id": "duplicate-key",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"p\",\"characterID\":\"c\",\"version\":\"1\",\"displayName\":\"J\",\"renderer\":\"static\",\"renderer\":\"vrm\",\"entryPath\":\"p.png\",\"locales\":[\"zh-Hans\"],\"assets\":[],\"provenance\":{\"author\":\"a\",\"license\":\"l\"}}",
+      "expect": "invalidManifest",
+      "note": "A last-key-wins parser installs this as a VRM package while its author reads it as static."
+    },
+    {
+      "id": "asset-unknown-key",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"p\",\"characterID\":\"c\",\"version\":\"1\",\"displayName\":\"J\",\"renderer\":\"static\",\"entryPath\":\"p.png\",\"locales\":[\"zh-Hans\"],\"assets\":[{\"path\":\"p.png\",\"mediaType\":\"image/png\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"executable\":true}],\"provenance\":{\"author\":\"a\",\"license\":\"l\"}}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "asset-missing-key",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"p\",\"characterID\":\"c\",\"version\":\"1\",\"displayName\":\"J\",\"renderer\":\"static\",\"entryPath\":\"p.png\",\"locales\":[\"zh-Hans\"],\"assets\":[{\"path\":\"p.png\",\"mediaType\":\"image/png\"}],\"provenance\":{\"author\":\"a\",\"license\":\"l\"}}",
+      "expect": "invalidManifest",
+      "note": "An asset without a declared digest cannot be verified, so it is not an asset."
+    },
+    {
+      "id": "motion-unknown-key",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"p\",\"characterID\":\"c\",\"version\":\"1\",\"displayName\":\"J\",\"renderer\":\"vrm\",\"entryPath\":\"model.vrm\",\"locales\":[\"zh-Hans\"],\"motions\":[{\"motion\":\"idle\",\"animation\":\"motions/idle.vrma\",\"duration_ms\":6000}],\"assets\":[],\"provenance\":{\"author\":\"a\",\"license\":\"l\"}}",
+      "expect": "invalidManifest",
+      "note": "`duration_ms` is deliberately not part of the contract: the clip file carries its own duration and a second copy can only ever disagree with it."
+    },
+    {
+      "id": "motion-missing-animation",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"p\",\"characterID\":\"c\",\"version\":\"1\",\"displayName\":\"J\",\"renderer\":\"vrm\",\"entryPath\":\"model.vrm\",\"locales\":[\"zh-Hans\"],\"motions\":[{\"motion\":\"idle\"}],\"assets\":[],\"provenance\":{\"author\":\"a\",\"license\":\"l\"}}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "motions-not-an-array",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"p\",\"characterID\":\"c\",\"version\":\"1\",\"displayName\":\"J\",\"renderer\":\"vrm\",\"entryPath\":\"model.vrm\",\"locales\":[\"zh-Hans\"],\"motions\":{\"idle\":\"motions/idle.vrma\"},\"assets\":[],\"provenance\":{\"author\":\"a\",\"license\":\"l\"}}",
+      "expect": "invalidManifest",
+      "note": "Desktop Joi keys motions by name in an object; the mobile contract is an array, and the two must not be silently interchanged."
+    },
+    {
+      "id": "provenance-unknown-key",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"p\",\"characterID\":\"c\",\"version\":\"1\",\"displayName\":\"J\",\"renderer\":\"static\",\"entryPath\":\"p.png\",\"locales\":[\"zh-Hans\"],\"assets\":[],\"provenance\":{\"author\":\"a\",\"license\":\"l\",\"purchasedFrom\":\"shop\"}}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "provenance-missing-license",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"p\",\"characterID\":\"c\",\"version\":\"1\",\"displayName\":\"J\",\"renderer\":\"static\",\"entryPath\":\"p.png\",\"locales\":[\"zh-Hans\"],\"assets\":[],\"provenance\":{\"author\":\"a\"}}",
+      "expect": "invalidManifest",
+      "note": "Rights are not optional metadata. A package with no declared licence has no admissible rights state."
+    },
+    {
+      "id": "forbidden-fragment-nested",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"p\",\"characterID\":\"c\",\"version\":\"1\",\"displayName\":\"J\",\"renderer\":\"static\",\"entryPath\":\"p.png\",\"locales\":[\"zh-Hans\"],\"assets\":[{\"path\":\"p.png\",\"mediaType\":\"image/png\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"api_key\":\"sk-not-a-real-key\"}],\"provenance\":{\"author\":\"a\",\"license\":\"l\"}}",
+      "expect": "invalidManifest",
+      "note": "Refused by the forbidden-content walk before shape checking. Key matching is case-folded and treats '-' as '_', so `API-Key`, `apiKey` and `api_key` are all the same refusal."
+    },
+    {
+      "id": "forbidden-fragment-memory",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"p\",\"characterID\":\"c\",\"version\":\"1\",\"displayName\":\"J\",\"renderer\":\"static\",\"entryPath\":\"p.png\",\"locales\":[\"zh-Hans\"],\"assets\":[],\"provenance\":{\"author\":\"a\",\"license\":\"l\",\"memoryNamespace\":\"user-state\"}}",
+      "expect": "invalidManifest",
+      "note": "A character package may never carry user state. This is the rule that keeps an imported character from arriving with somebody else's memory attached."
+    },
+    {
+      "id": "unknown-renderer-kind",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"p\",\"characterID\":\"c\",\"version\":\"1\",\"displayName\":\"J\",\"renderer\":\"unity\",\"entryPath\":\"scene.unity3d\",\"locales\":[\"zh-Hans\"],\"assets\":[],\"provenance\":{\"author\":\"a\",\"license\":\"l\"}}",
+      "expect": "invalidManifest",
+      "note": "The renderer set is closed at static/live2d/vrm on every platform."
+    },
+    {
+      "id": "renderer-wrong-type",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"p\",\"characterID\":\"c\",\"version\":\"1\",\"displayName\":\"J\",\"renderer\":2,\"entryPath\":\"p.png\",\"locales\":[\"zh-Hans\"],\"assets\":[],\"provenance\":{\"author\":\"a\",\"license\":\"l\"}}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "locales-wrong-type",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"p\",\"characterID\":\"c\",\"version\":\"1\",\"displayName\":\"J\",\"renderer\":\"static\",\"entryPath\":\"p.png\",\"locales\":\"zh-Hans\",\"assets\":[],\"provenance\":{\"author\":\"a\",\"license\":\"l\"}}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "assets-wrong-type",
+      "document": "{\"schema\":\"joi.character.v1\",\"packageID\":\"p\",\"characterID\":\"c\",\"version\":\"1\",\"displayName\":\"J\",\"renderer\":\"static\",\"entryPath\":\"p.png\",\"locales\":[\"zh-Hans\"],\"assets\":{\"p.png\":\"image/png\"},\"provenance\":{\"author\":\"a\",\"license\":\"l\"}}",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "not-an-object",
+      "document": "[{\"schema\":\"joi.character.v1\"}]",
+      "expect": "invalidManifest"
+    },
+    {
+      "id": "legacy-unknown-top-key",
+      "document": "{\"schema\":\"joi.character.v1\",\"id\":\"fixture.desktop\",\"version\":\"1.0.0\",\"locale\":\"zh\",\"identity\":{\"name\":\"桌面角色\"},\"appearance\":{\"model_type\":\"static\",\"portrait\":\"portrait.png\"},\"telemetry\":{\"enabled\":true}}",
+      "expect": "unsupportedLegacy",
+      "envelope": "legacy",
+      "note": "The legacy envelope is an allowlist too. An unrecognised desktop key is refused rather than carried across."
+    },
+    {
+      "id": "legacy-unknown-identity-key",
+      "document": "{\"schema\":\"joi.character.v1\",\"id\":\"fixture.desktop\",\"version\":\"1.0.0\",\"locale\":\"zh\",\"identity\":{\"name\":\"桌面角色\",\"favourite_colour\":\"blue\"},\"appearance\":{\"model_type\":\"static\",\"portrait\":\"portrait.png\"}}",
+      "expect": "unsupportedLegacy",
+      "envelope": "legacy"
+    },
+    {
+      "id": "legacy-unknown-source-key",
+      "document": "{\"schema\":\"joi.character.v1\",\"id\":\"fixture.desktop\",\"version\":\"1.0.0\",\"locale\":\"zh\",\"identity\":{\"name\":\"桌面角色\"},\"appearance\":{\"model_type\":\"static\",\"portrait\":\"portrait.png\"},\"source\":{\"type\":\"desktop-export\",\"mirror_url\":\"https://example.invalid/m\"}}",
+      "expect": "unsupportedLegacy",
+      "envelope": "legacy"
+    },
+    {
+      "id": "legacy-unsupported-locale",
+      "document": "{\"schema\":\"joi.character.v1\",\"id\":\"fixture.desktop\",\"version\":\"1.0.0\",\"locale\":\"fr\",\"identity\":{\"name\":\"桌面角色\"},\"appearance\":{\"model_type\":\"static\",\"portrait\":\"portrait.png\"}}",
+      "expect": "unsupportedLegacy",
+      "envelope": "legacy",
+      "note": "Only `zh` maps, and it maps to `zh-Hans` with a warning. This is a single named migration, not a general locale fallback."
+    },
+    {
+      "id": "legacy-locale-absent",
+      "document": "{\"schema\":\"joi.character.v1\",\"id\":\"fixture.desktop\",\"version\":\"1.0.0\",\"identity\":{\"name\":\"桌面角色\"},\"appearance\":{\"model_type\":\"static\",\"portrait\":\"portrait.png\"}}",
+      "expect": "unsupportedLegacy",
+      "envelope": "legacy"
+    },
+    {
+      "id": "legacy-multiple-locales",
+      "document": "{\"schema\":\"joi.character.v1\",\"id\":\"fixture.desktop\",\"version\":\"1.0.0\",\"locales\":[\"zh\",\"ja\"],\"identity\":{\"name\":\"桌面角色\"},\"appearance\":{\"model_type\":\"static\",\"portrait\":\"portrait.png\"}}",
+      "expect": "unsupportedLegacy",
+      "envelope": "legacy",
+      "note": "A legacy document declaring more than one locale has no single answer for the adapted manifest, so it is refused instead of having one picked for it."
+    },
+    {
+      "id": "legacy-unknown-model-type",
+      "document": "{\"schema\":\"joi.character.v1\",\"id\":\"fixture.desktop\",\"version\":\"1.0.0\",\"locale\":\"zh\",\"identity\":{\"name\":\"桌面角色\"},\"appearance\":{\"model_type\":\"unity\",\"portrait\":\"portrait.png\"}}",
+      "expect": "unsupportedLegacy",
+      "envelope": "legacy"
+    },
+    {
+      "id": "legacy-missing-name",
+      "document": "{\"schema\":\"joi.character.v1\",\"id\":\"fixture.desktop\",\"version\":\"1.0.0\",\"locale\":\"zh\",\"identity\":{\"tone\":\"温和\"},\"appearance\":{\"model_type\":\"static\",\"portrait\":\"portrait.png\"}}",
+      "expect": "unsupportedLegacy",
+      "envelope": "legacy"
+    },
+    {
+      "id": "legacy-static-without-portrait",
+      "document": "{\"schema\":\"joi.character.v1\",\"id\":\"fixture.desktop\",\"version\":\"1.0.0\",\"locale\":\"zh\",\"identity\":{\"name\":\"桌面角色\"},\"appearance\":{\"model_type\":\"static\",\"model\":\"model.vrm\"}}",
+      "expect": "unsupportedLegacy",
+      "envelope": "legacy",
+      "note": "A static character whose only asset is a model has nothing to draw."
+    },
+    {
+      "id": "legacy-model-type-without-model",
+      "document": "{\"schema\":\"joi.character.v1\",\"id\":\"fixture.desktop\",\"version\":\"1.0.0\",\"locale\":\"zh\",\"identity\":{\"name\":\"桌面角色\"},\"appearance\":{\"model_type\":\"vrm\",\"portrait\":\"portrait.png\"}}",
+      "expect": "unsupportedLegacy",
+      "envelope": "legacy"
+    }
+  ]
+}
