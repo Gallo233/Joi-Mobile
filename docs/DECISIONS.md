@@ -253,3 +253,22 @@
 - **What is left, stated rather than hidden:** the two bounds are on different axes, so the byte bound still decides in one corner. 2000 assets fit while paths average under roughly 400 characters; a document whose paths all approach the schema's 512-character maximum exceeds 1 MiB and is refused for size. Above that bound the platforms answer with different codes — iOS reads `manifest.json` through a bounded read and answers `unsafeArchive`, a platform handed the bytes answers `invalidManifest` from the scanner. That is the read-path boundary `manifest-validation.json` already excludes from the admission stage, not a new divergence, and both the corpus notes and the iOS test say so explicitly rather than leaving it to be rediscovered.
 - **Guarded where the drift happened:** the defect was three artifacts disagreeing in silence, which no single artifact can notice. `Tests/test_contracts.py` now reads the schema, the Swift limits and the Kotlin limits together and fails if the declared bound stops being one number, if the two platforms' generic guards stop matching, or if the manifest byte bound stops holding a real 2000-asset document.
 - **Not vectored in the corpus:** a case with 2000 declared assets is a quarter of a megabyte of filler that no reviewer would read. The numbers are asserted in the Swift and Kotlin test twins instead, and `Contracts/conformance/manifest-validation.json` notes point at both — including the assertion that every *other* array stayed at 300, so a later change cannot remove the guard while believing it corrected it.
+
+## DEC-029 — The restricted ZIP profile refuses every mainstream archiver, and one reason was a bug
+
+- **Status:** One defect fixed; the compatibility question is open
+- **Date:** 2026-08-15
+- **How it was found:** `Contracts/conformance/zip-profile.json` (DEC-026's layer applied to archives) put 40 complete archives through the preflight. Thirty-seven agreed with the written policy on the first run. Chasing the three that did not led to archives produced by real tools, and none of them can be imported.
+- **Measured on 2026-08-15**, one folder containing two files, archived four ways:
+
+  | Producer | Extra fields written | Directory mode | Outcome |
+  |---|---|---|---|
+  | `zip -r` | `0x5455` extended timestamp, `0x7875` Unix UID/GID | `0o40755` | `unsupportedArchiveProfile` |
+  | `ditto -c -k` (Finder's Compress) | `0x5855` old Info-ZIP Unix | `0o40755` | `unsupportedArchiveProfile`, and it adds a `__MACOSX/` sidecar tree |
+  | Python `zipfile` | none | n/a | `unsafeArchive` |
+  | `zip -rX` | none | `0o40755` | `unsafeArchive` before the fix below |
+
+- **The defect, fixed:** `validateAttributes` refused any Unix entry with an execute bit, including directories. On a directory that bit is the *search* bit — a directory without it cannot be entered, so every archiver writes `0o755`. The rule was written for files and silently applied to folders, which refused every archive containing one. Since a Live2D package is a folder of textures and motions, this refused essentially every real Live2D ZIP. Execute bits are still refused on files.
+- **Open, and a Trust & Safety call rather than an implementation one:** whether to admit `0x7875` and `0x5855`. Both carry integers and no path, so refusing them buys nothing concrete while costing the two most likely ways a user produces an archive. The counter-argument is that the allowlist is deliberately small and every addition is a parser surface. Related: Finder's `__MACOSX/` tree would still be refused later as undeclared assets by the renderer graph, so accepting the extra field alone does not make a Finder archive importable.
+- **Also open:** Python's `zipfile` writes an external attribute with permission bits and no file-type nibble. The type check requires `S_IFREG`. Accepting a zero type for host 3 would weaken a real check — the same field is how a symlink is detected — so this one probably *should* stay refused, and the useful fix is a clearer message rather than a looser rule.
+- **Why this stayed invisible until now:** the J1B corpus was built by the test code, which chose header fields that satisfied the parser. Nothing exercised an archive a person would actually hand the product. The three producer archives are carried in the corpus as non-normative vectors recording what happens today, so the finding cannot be lost between sessions.

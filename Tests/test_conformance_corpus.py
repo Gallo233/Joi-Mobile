@@ -17,6 +17,7 @@ CONFORMANCE = ROOT / "Contracts/conformance"
 
 sys.path.insert(0, str(ROOT / "Tools"))
 import make_conformance_corpus  # noqa: E402
+import make_zip_corpus  # noqa: E402
 
 IMPORT_CODE_SOURCE = (
     ROOT / "Packages/CharacterRuntime/Sources/CharacterRuntime/CharacterPackageInstaller.swift"
@@ -42,7 +43,13 @@ class CorpusShapeTests(unittest.TestCase):
         files = sorted(CONFORMANCE.glob("*.json"))
         self.assertEqual(
             {path.name for path in files},
-            {"content-id.json", "manifest-validation.json", "sse-framing.json", "strict-json.json"},
+            {
+                "content-id.json",
+                "manifest-validation.json",
+                "sse-framing.json",
+                "strict-json.json",
+                "zip-profile.json",
+            },
         )
         for path in files:
             with self.subTest(path=path.name):
@@ -65,6 +72,39 @@ class CorpusShapeTests(unittest.TestCase):
             generated,
             "content-id.json is stale; run python3 Tools/make_conformance_corpus.py",
         )
+
+    def test_zip_profile_file_matches_its_generator(self) -> None:
+        generated = json.dumps(make_zip_corpus.build_document(), indent=2, ensure_ascii=False) + "\n"
+        self.assertEqual(
+            (CONFORMANCE / "zip-profile.json").read_text(encoding="utf-8"),
+            generated,
+            "zip-profile.json is stale; run python3 Tools/make_zip_corpus.py",
+        )
+
+    def test_zip_profile_vectors_are_well_formed_and_cover_every_refusal(self) -> None:
+        import base64
+
+        codes = stable_import_codes()
+        cases = load("zip-profile.json")["cases"]
+        outcomes = set()
+        for case in cases:
+            with self.subTest(case=case["id"]):
+                archive = base64.b64decode(case["archiveBase64"], validate=True)
+                self.assertGreater(len(archive), 0)
+                if case["expect"] != "accept":
+                    self.assertIn(case["expect"], codes)
+                outcomes.add(case["expect"])
+                # A vector the implementation is known to fail must say what it
+                # does instead, and that too must be a real code.
+                if case.get("normative") is False:
+                    self.assertIn(case["currentOutcome"], codes)
+                    self.assertTrue(case["finding"])
+        self.assertEqual(
+            outcomes,
+            {"accept", "malformedArchive", "unsafeArchive", "unsupportedArchiveProfile"},
+            "the three refusals are meant to stay distinguishable",
+        )
+        self.assertGreaterEqual(len(cases), 40)
 
     def test_content_id_vectors_are_well_formed(self) -> None:
         cases = load("content-id.json")["cases"]

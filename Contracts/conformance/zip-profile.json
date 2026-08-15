@@ -1,0 +1,278 @@
+{
+  "schema": "joi.conformance.zip-profile.v1",
+  "description": "The restricted ZIP profile: what a character archive may be before anything is written to disk. Every case is a complete archive; feed its bytes to the preflight and compare the outcome.",
+  "notes": [
+    "`expect` is `accept` or a stable import code. The three refusals are deliberately distinct: `unsupportedArchiveProfile` means the archive is well formed and this reader will not open it, `unsafeArchive` means the archive is attempting something, and `malformedArchive` means the bytes do not describe an archive. A user can act on the first, and should be told something different about the second.",
+    "Archives are built by Tools/make_zip_corpus.py rather than by a ZIP library, because a convenience writer chooses header fields the policy is about.",
+    "Limits are stated in the contract and not vectored: 128 MiB archive, 128 MiB per file, 512 MiB expanded, 2000 entries. A case for the entry count alone would be 2001 headers of filler."
+  ],
+  "cases": [
+    {
+      "id": "stored-single",
+      "expect": "accept",
+      "note": "One stored entry. The baseline every rejection below is a mutation of.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAAAcLqILHQAAAB0AAAANAAAAbWFuaWZlc3QuanNvbnsic2NoZW1hIjoiam9pLmNoYXJhY3Rlci52MSJ9UEsBAhQDFAAAAAAAAAAAABwuogsdAAAAHQAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAASAAAAAAA"
+    },
+    {
+      "id": "deflated-single",
+      "expect": "accept",
+      "note": "Deflate is the only compression method admitted besides stored.",
+      "archiveBase64": "UEsDBBQAAgAIAAAAAAB2NWEcFAEAAAACAAANAAAAbWFuaWZlc3QuanNvbmNgZGJmYWVj5+Dk4ubh5eMXEBQSFhEVE5eQlJKWkZWTV1BUUlZRVVPX0NTS1tHV0zcwNDI2MTUzt7C0sraxtbN3cHRydnF1c/fw9PL28fXzDwgMCg4JDQuPiIyKjomNi09ITEpOSU1Lz8jMys7JzcsvKCwqLiktK6+orKquqa2rb2hsam5pbWvv6Ozq7unt658wcdLkKVOnTZ8xc9bsOXPnzV+wcNHiJUuXLV+xctXqNWvXrd+wcdPmLVu3bd+xc9fuPXv37T9w8NDhI0ePHT9x8tTpM2fPnb9w8dLlK1evXb9x89btO3fv3X/w8NHjJ0+fPX/x8tXrN2/fvf/w8dPnL1+/ff/x89fvP3///WcY4f4HAFBLAQIUAxQAAgAIAAAAAAB2NWEcFAEAAAACAAANAAAAAAAAAAAAAACkgQAAAABtYW5pZmVzdC5qc29uUEsFBgAAAAABAAEAOwAAAD8BAAAAAA=="
+    },
+    {
+      "id": "directory-entry",
+      "expect": "accept",
+      "note": "A directory entry carries no data and is not reported as a file.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAbW90aW9ucy9QSwMEFAAAAAAAAAAAAGcUIK0EAAAABAAAABEAAABtb3Rpb25zL2lkbGUudnJtYWNsaXBQSwECFAMUAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAA7UEAAAAAbW90aW9ucy9QSwECFAMUAAAAAAAAAAAAZxQgrQQAAAAEAAAAEQAAAAAAAAAAAAAApIEmAAAAbW90aW9ucy9pZGxlLnZybWFQSwUGAAAAAAIAAgB1AAAAWQAAAAAA"
+    },
+    {
+      "id": "utf8-name",
+      "expect": "accept",
+      "note": "A non-ASCII name is admitted when the UTF-8 flag is set and the bytes round-trip through UTF-8.",
+      "archiveBase64": "UEsDBBQAAAgAAAAAAABDv6ajAgAAAAIAAAASAAAA6LWE5paZL+ivtOaYji5qc29ue31QSwECFAMUAAAIAAAAAAAAQ7+mowIAAAACAAAAEgAAAAAAAAAAAAAApIEAAAAA6LWE5paZL+ivtOaYji5qc29uUEsFBgAAAAABAAEAQAAAADIAAAAAAA=="
+    },
+    {
+      "id": "dos-host",
+      "expect": "accept",
+      "note": "A DOS/NTFS-hosted archive is admitted; only its directory bit is checked, because DOS attributes carry no permission model to check.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAABDv6ajAgAAAAIAAAANAAAAbWFuaWZlc3QuanNvbnt9UEsBAhQAFAAAAAAAAAAAAEO/pqMCAAAAAgAAAA0AAAAAAAAAAAAgAAAAAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAALQAAAAAA"
+    },
+    {
+      "id": "zip64-end-record",
+      "expect": "unsupportedArchiveProfile",
+      "note": "A ZIP64 end record anywhere in the tail. Refused by signature before parsing, because ZIP64 changes the meaning of fields this parser reads.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAAAcLqILHQAAAB0AAAANAAAAbWFuaWZlc3QuanNvbnsic2NoZW1hIjoiam9pLmNoYXJhY3Rlci52MSJ9UEsBAhQDFAAAAAAAAAAAABwuogsdAAAAHQAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAASAAAAAAAUEsGBgAAAAAAAAAA"
+    },
+    {
+      "id": "zip64-locator",
+      "expect": "unsupportedArchiveProfile",
+      "note": "The ZIP64 locator signature, likewise.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAAAcLqILHQAAAB0AAAANAAAAbWFuaWZlc3QuanNvbnsic2NoZW1hIjoiam9pLmNoYXJhY3Rlci52MSJ9UEsBAhQDFAAAAAAAAAAAABwuogsdAAAAHQAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAASAAAAAAAUEsGBwAAAAAAAAAA"
+    },
+    {
+      "id": "encrypted-entry",
+      "expect": "unsupportedArchiveProfile",
+      "note": "Flag bit 0 is traditional encryption. The bytes may be perfectly well formed; nothing here can read them.",
+      "archiveBase64": "UEsDBBQAAQAAAAAAAABDv6ajAgAAAAIAAAANAAAAbWFuaWZlc3QuanNvbnt9UEsBAhQDFAABAAAAAAAAAEO/pqMCAAAAAgAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAALQAAAAAA"
+    },
+    {
+      "id": "strong-encryption",
+      "expect": "unsupportedArchiveProfile",
+      "note": "Flag bit 6 is strong encryption.",
+      "archiveBase64": "UEsDBBQAQAAAAAAAAABDv6ajAgAAAAIAAAANAAAAbWFuaWZlc3QuanNvbnt9UEsBAhQDFABAAAAAAAAAAEO/pqMCAAAAAgAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAALQAAAAAA"
+    },
+    {
+      "id": "data-descriptor",
+      "expect": "unsupportedArchiveProfile",
+      "note": "Flag bit 3 puts the sizes after the payload, so the local header cannot be checked against the central directory before reading.",
+      "archiveBase64": "UEsDBBQACAAAAAAAAABDv6ajAgAAAAIAAAANAAAAbWFuaWZlc3QuanNvbnt9UEsBAhQDFAAIAAAAAAAAAEO/pqMCAAAAAgAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAALQAAAAAA"
+    },
+    {
+      "id": "unsupported-method",
+      "expect": "unsupportedArchiveProfile",
+      "note": "bzip2. Refused as unsupported rather than corrupt: the archive is fine, this reader is not.",
+      "archiveBase64": "UEsDBBQAAAAMAAAAAABDv6ajAgAAAAIAAAANAAAAbWFuaWZlc3QuanNvbnt9UEsBAhQDFAAAAAwAAAAAAEO/pqMCAAAAAgAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAALQAAAAAA"
+    },
+    {
+      "id": "needs-version-45",
+      "expect": "unsupportedArchiveProfile",
+      "note": "Extract-version 45 declares ZIP64 regardless of what the fields hold.",
+      "archiveBase64": "UEsDBC0AAAAAAAAAAABDv6ajAgAAAAIAAAANAAAAbWFuaWZlc3QuanNvbnt9UEsBAhQDLQAAAAAAAAAAAEO/pqMCAAAAAgAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAALQAAAAAA"
+    },
+    {
+      "id": "multidisk",
+      "expect": "unsupportedArchiveProfile",
+      "note": "A split archive. One volume cannot be validated on its own.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAAAcLqILHQAAAB0AAAANAAAAbWFuaWZlc3QuanNvbnsic2NoZW1hIjoiam9pLmNoYXJhY3Rlci52MSJ9UEsBAhQDFAAAAAAAAAAAABwuogsdAAAAHQAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAQABAAEAAQA7AAAASAAAAAAA"
+    },
+    {
+      "id": "entry-on-other-disk",
+      "expect": "unsupportedArchiveProfile",
+      "note": "A central entry pointing at another volume.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAABDv6ajAgAAAAIAAAANAAAAbWFuaWZlc3QuanNvbnt9UEsBAhQDFAAAAAAAAAAAAEO/pqMCAAAAAgAAAA0AAAAAAAEAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAALQAAAAAA"
+    },
+    {
+      "id": "zip64-extra-field",
+      "expect": "unsupportedArchiveProfile",
+      "note": "Extra field 0x0001 is the ZIP64 extension.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAABDv6ajAgAAAAIAAAANAAQAbWFuaWZlc3QuanNvbgEAAAB7fVBLAQIUAxQAAAAAAAAAAABDv6ajAgAAAAIAAAANAAQAAAAAAAAAAACkgQAAAABtYW5pZmVzdC5qc29uAQAAAFBLBQYAAAAAAQABAD8AAAAxAAAAAAA="
+    },
+    {
+      "id": "unknown-extra-field",
+      "expect": "unsupportedArchiveProfile",
+      "note": "Unknown extra fields are refused rather than skipped: an extra field is where a link target or an alternate size would hide.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAABDv6ajAgAAAAIAAAANAAYAbWFuaWZlc3QuanNvbgGZAgAAAHt9UEsBAhQDFAAAAAAAAAAAAEO/pqMCAAAAAgAAAA0ABgAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb24BmQIAAABQSwUGAAAAAAEAAQBBAAAAMwAAAAAA"
+    },
+    {
+      "id": "unknown-host",
+      "expect": "unsupportedArchiveProfile",
+      "note": "A host system whose attribute encoding this parser does not know, so its file-type and permission bits cannot be checked.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAABDv6ajAgAAAAIAAAANAAAAbWFuaWZlc3QuanNvbnt9UEsBAhQHFAAAAAAAAAAAAEO/pqMCAAAAAgAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAALQAAAAAA"
+    },
+    {
+      "id": "unexpected-flag-bit",
+      "expect": "unsupportedArchiveProfile",
+      "note": "A stored entry setting a deflate-only compression-option bit.",
+      "archiveBase64": "UEsDBBQABAAAAAAAAABDv6ajAgAAAAIAAAANAAAAbWFuaWZlc3QuanNvbnt9UEsBAhQDFAAEAAAAAAAAAEO/pqMCAAAAAgAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAALQAAAAAA"
+    },
+    {
+      "id": "path-traversal",
+      "expect": "unsafeArchive",
+      "note": "The oldest one. `..` is refused as a path component, not sanitized away.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAACDFtyMAQAAAAEAAAANAAAALi4vZXNjYXBlLnR4dHhQSwECFAMUAAAAAAAAAAAAgxbcjAEAAAABAAAADQAAAAAAAAAAAAAApIEAAAAALi4vZXNjYXBlLnR4dFBLBQYAAAAAAQABADsAAAAsAAAAAAA="
+    },
+    {
+      "id": "absolute-path",
+      "expect": "unsafeArchive",
+      "note": "A leading slash.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAACDFtyMAQAAAAEAAAALAAAAL2V0Yy9wYXNzd2R4UEsBAhQDFAAAAAAAAAAAAIMW3IwBAAAAAQAAAAsAAAAAAAAAAAAAAKSBAAAAAC9ldGMvcGFzc3dkUEsFBgAAAAABAAEAOQAAACoAAAAAAA=="
+    },
+    {
+      "id": "backslash-path",
+      "expect": "unsafeArchive",
+      "note": "A backslash is refused outright rather than translated, because which platform reads it as a separator is not this layer's guess to make.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAACDFtyMAQAAAAEAAAAHAAAAYVxiLnR4dHhQSwECFAMUAAAAAAAAAAAAgxbcjAEAAAABAAAABwAAAAAAAAAAAAAApIEAAAAAYVxiLnR4dFBLBQYAAAAAAQABADUAAAAmAAAAAAA="
+    },
+    {
+      "id": "drive-letter",
+      "expect": "unsafeArchive",
+      "note": "A colon, which is a drive separator on one platform and a legal name character on another.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAACDFtyMAQAAAAEAAAAKAAAAQzpkYXRhLnR4dHhQSwECFAMUAAAAAAAAAAAAgxbcjAEAAAABAAAACgAAAAAAAAAAAAAApIEAAAAAQzpkYXRhLnR4dFBLBQYAAAAAAQABADgAAAApAAAAAAA="
+    },
+    {
+      "id": "control-character-name",
+      "expect": "unsafeArchive",
+      "note": "A newline in a name. Nothing legitimate needs one, and log lines and path displays are where it would show up.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAACDFtyMAQAAAAEAAAAMAAAAYmFkCm5hbWUudHh0eFBLAQIUAxQAAAAAAAAAAACDFtyMAQAAAAEAAAAMAAAAAAAAAAAAAACkgQAAAABiYWQKbmFtZS50eHRQSwUGAAAAAAEAAQA6AAAAKwAAAAAA"
+    },
+    {
+      "id": "empty-path-component",
+      "expect": "unsafeArchive",
+      "note": "A doubled separator. The empty component has no meaning to resolve.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAACDFtyMAQAAAAEAAAAIAAAAYS8vYi50eHR4UEsBAhQDFAAAAAAAAAAAAIMW3IwBAAAAAQAAAAgAAAAAAAAAAAAAAKSBAAAAAGEvL2IudHh0UEsFBgAAAAABAAEANgAAACcAAAAAAA=="
+    },
+    {
+      "id": "dot-component",
+      "expect": "unsafeArchive",
+      "note": "A single-dot component.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAACDFtyMAQAAAAEAAAAJAAAAYS8uL2IudHh0eFBLAQIUAxQAAAAAAAAAAACDFtyMAQAAAAEAAAAJAAAAAAAAAAAAAACkgQAAAABhLy4vYi50eHRQSwUGAAAAAAEAAQA3AAAAKAAAAAAA"
+    },
+    {
+      "id": "case-collision",
+      "expect": "unsafeArchive",
+      "note": "Two names differing only by case. On a case-insensitive volume the second silently becomes the first, after the manifest has accounted for two files.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAABDvrfoAQAAAAEAAAAJAAAATW9kZWwudnJtYVBLAwQUAAAAAAAAAAAA+e++cQEAAAABAAAACQAAAG1vZGVsLnZybWJQSwECFAMUAAAAAAAAAAAAQ7636AEAAAABAAAACQAAAAAAAAAAAAAApIEAAAAATW9kZWwudnJtUEsBAhQDFAAAAAAAAAAAAPnvvnEBAAAAAQAAAAkAAAAAAAAAAAAAAKSBKAAAAG1vZGVsLnZybVBLBQYAAAAAAgACAG4AAABQAAAAAAA="
+    },
+    {
+      "id": "normalization-collision",
+      "expect": "unsafeArchive",
+      "note": "The same name composed and decomposed. Byte-distinct, filesystem-identical.",
+      "archiveBase64": "UEsDBBQAAAgAAAAAAABDvrfoAQAAAAEAAAAJAAAAY2Fmw6kudHh0YVBLAwQUAAAIAAAAAAAA+e++cQEAAAABAAAACgAAAGNhZmXMgS50eHRiUEsBAhQDFAAACAAAAAAAAEO+t+gBAAAAAQAAAAkAAAAAAAAAAAAAAKSBAAAAAGNhZsOpLnR4dFBLAQIUAxQAAAgAAAAAAAD5775xAQAAAAEAAAAKAAAAAAAAAAAAAACkgSgAAABjYWZlzIEudHh0UEsFBgAAAAACAAIAbwAAAFEAAAAAAA=="
+    },
+    {
+      "id": "symlink-entry",
+      "expect": "unsafeArchive",
+      "note": "A symbolic link. An installed tree that can point outside itself is not sealed content.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAAADa0DfEAAAABAAAAAEAAAAbGluay4uLy4uL2V0Yy9wYXNzd2RQSwECFAMUAAAAAAAAAAAAA2tA3xAAAAAQAAAABAAAAAAAAAAAAAAA/6EAAAAAbGlua1BLBQYAAAAAAQABADIAAAAyAAAAAAA="
+    },
+    {
+      "id": "executable-entry",
+      "expect": "unsafeArchive",
+      "note": "An execute bit. A character package is art, and nothing in it runs.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAAAdnfsECgAAAAoAAAAGAAAAcnVuLnNoIyEvYmluL3NoClBLAQIUAxQAAAAAAAAAAAAdnfsECgAAAAoAAAAGAAAAAAAAAAAAAADtgQAAAABydW4uc2hQSwUGAAAAAAEAAQA0AAAALgAAAAAA"
+    },
+    {
+      "id": "directory-with-payload",
+      "expect": "unsafeArchive",
+      "note": "An entry marked as a directory that also carries bytes.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAAAVaixCBwAAAAcAAAAIAAAAbW90aW9ucy9wYXlsb2FkUEsBAhQDFAAAAAAAAAAAABVqLEIHAAAABwAAAAgAAAAAAAAAAAAAAO1BAAAAAG1vdGlvbnMvUEsFBgAAAAABAAEANgAAAC0AAAAAAA=="
+    },
+    {
+      "id": "non-utf8-name",
+      "expect": "unsafeArchive",
+      "note": "A name that is not valid UTF-8. There is no encoding to fall back to that would not be a guess.",
+      "archiveBase64": "UEsDBBQAAAgAAAAAAACDFtyMAQAAAAEAAAAIAAAAYmFk/y50eHR4UEsBAhQDFAAACAAAAAAAAIMW3IwBAAAAAQAAAAgAAAAAAAAAAAAAAKSBAAAAAGJhZP8udHh0UEsFBgAAAAABAAEANgAAACcAAAAAAA=="
+    },
+    {
+      "id": "central-names-a-different-file",
+      "expect": "malformedArchive",
+      "note": "Two central entries pointing at one local header, the second under a different name. The local header still carries the first name, and local-central disagreement is caught before the shared range is: two readers would disagree about what this entry is called.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAAAVaixCBwAAAAcAAAAFAAAAYS50eHRwYXlsb2FkUEsBAhQDFAAAAAAAAAAAABVqLEIHAAAABwAAAAUAAAAAAAAAAAAAAKSBAAAAAGEudHh0UEsBAhQDFAAAAAAAAAAAABVqLEIHAAAABwAAAAUAAAAAAAAAAAAAAKSBAAAAAGIudHh0UEsFBgAAAAACAAIAZgAAACoAAAAAAA=="
+    },
+    {
+      "id": "expansion-ratio",
+      "expect": "unsafeArchive",
+      "note": "A zip bomb in miniature: highly compressible payload past the 20:1 expansion bound.",
+      "archiveBase64": "UEsDBBQAAgAIAAAAAABBHVpCogcAAICEHgAIAAAAYm9tYi5iaW7twQEBAAAAgiD/r25IQAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAG8GUEsBAhQDFAACAAgAAAAAAEEdWkKiBwAAgIQeAAgAAAAAAAAAAAAAAKSBAAAAAGJvbWIuYmluUEsFBgAAAAABAAEANgAAAMgHAAAAAA=="
+    },
+    {
+      "id": "too-short",
+      "expect": "malformedArchive",
+      "note": "Shorter than an end-of-central-directory record.",
+      "archiveBase64": "UEsFBg=="
+    },
+    {
+      "id": "no-eocd",
+      "expect": "malformedArchive",
+      "note": "No end record at all.",
+      "archiveBase64": "UEsDBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    },
+    {
+      "id": "comment-length-mismatch",
+      "expect": "malformedArchive",
+      "note": "A declared comment length that does not reach the end of the file — the classic way to hide bytes after the archive a reader will not see.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAAAcLqILHQAAAB0AAAANAAAAbWFuaWZlc3QuanNvbnsic2NoZW1hIjoiam9pLmNoYXJhY3Rlci52MSJ9UEsBAhQDFAAAAAAAAAAAABwuogsdAAAAHQAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAASAAAAAUA"
+    },
+    {
+      "id": "central-offset-mismatch",
+      "expect": "malformedArchive",
+      "note": "A central directory whose declared size does not land on the end record.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAAAcLqILHQAAAB0AAAANAAAAbWFuaWZlc3QuanNvbnsic2NoZW1hIjoiam9pLmNoYXJhY3Rlci52MSJ9UEsBAhQDFAAAAAAAAAAAABwuogsdAAAAHQAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQDnAwAASAAAAAAA"
+    },
+    {
+      "id": "bad-central-signature",
+      "expect": "malformedArchive",
+      "note": "A corrupted central header signature.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAAAcLqILHQAAAB0AAAANAAAAbWFuaWZlc3QuanNvbnsic2NoZW1hIjoiam9pLmNoYXJhY3Rlci52MSJ9UEsBABQDFAAAAAAAAAAAABwuogsdAAAAHQAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAASAAAAAAA"
+    },
+    {
+      "id": "local-central-crc-mismatch",
+      "expect": "malformedArchive",
+      "note": "Local and central headers disagreeing about the CRC. Which one a reader believes is exactly the ambiguity this profile removes.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAADvvq3eAgAAAAIAAAANAAAAbWFuaWZlc3QuanNvbnt9UEsBAhQDFAAAAAAAAAAAAEO/pqMCAAAAAgAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAALQAAAAAA"
+    },
+    {
+      "id": "entry-count-mismatch",
+      "expect": "malformedArchive",
+      "note": "An end record claiming more entries than the central directory holds.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAAAcLqILHQAAAB0AAAANAAAAbWFuaWZlc3QuanNvbnsic2NoZW1hIjoiam9pLmNoYXJhY3Rlci52MSJ9UEsBAhQDFAAAAAAAAAAAABwuogsdAAAAHQAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAIAAgA7AAAASAAAAAAA"
+    },
+    {
+      "id": "producer-usr-bin-zip",
+      "expect": "accept",
+      "note": "What `zip -r` writes: an extended-timestamp field and a Unix UID/GID field, on every entry.",
+      "normative": false,
+      "currentOutcome": "unsupportedArchiveProfile",
+      "finding": "Extra field 0x7875 (Unix UID/GID) is not in the allowlist. It carries two integers and no path, so refusing it buys nothing and costs every archive this tool produces.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAIABgAbW90aW9ucy9VVAUAAwAAAAB1eAsAAQT1AQAABBQAAABQSwMEFAAAAAAAAAAAAGcUIK0EAAAABAAAABEAGABtb3Rpb25zL2lkbGUudnJtYVVUBQADAAAAAHV4CwABBPUBAAAEFAAAAGNsaXBQSwMEFAAAAAAAAAAAAEO/pqMCAAAAAgAAAA0AGABtYW5pZmVzdC5qc29uVVQFAAMAAAAAdXgLAAEE9QEAAAQUAAAAe31QSwECFAMUAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAYAAAAAAAAAAAA7UEAAAAAbW90aW9ucy9VVAUAAwAAAAB1eAsAAQT1AQAABBQAAABQSwECFAMUAAAAAAAAAAAAZxQgrQQAAAAEAAAAEQAYAAAAAAAAAAAApIE+AAAAbW90aW9ucy9pZGxlLnZybWFVVAUAAwAAAAB1eAsAAQT1AQAABBQAAABQSwECFAMUAAAAAAAAAAAAQ7+mowIAAAACAAAADQAYAAAAAAAAAAAApIGJAAAAbWFuaWZlc3QuanNvblVUBQADAAAAAHV4CwABBPUBAAAEFAAAAFBLBQYAAAAAAwADAPgAAADOAAAAAAA="
+    },
+    {
+      "id": "producer-ditto",
+      "expect": "accept",
+      "note": "What macOS `ditto -c -k` — the engine behind Finder's Compress — writes: an old-style Unix field, plus a __MACOSX sidecar tree.",
+      "normative": false,
+      "currentOutcome": "unsupportedArchiveProfile",
+      "finding": "Extra field 0x5855 (old Info-ZIP Unix) is not in the allowlist. Separately, Finder archives carry a __MACOSX/ tree of resource forks that a character package has no use for and that the renderer graph will refuse as undeclared assets.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAIABAAbW90aW9ucy9VWAwAAAAAAAAAAAD1ARQAUEsDBBQAAAAAAAAAAABnFCCtBAAAAAQAAAARABAAbW90aW9ucy9pZGxlLnZybWFVWAwAAAAAAAAAAAD1ARQAY2xpcFBLAwQUAAAAAAAAAAAAQ7+mowIAAAACAAAADQAQAG1hbmlmZXN0Lmpzb25VWAwAAAAAAAAAAAD1ARQAe31QSwECFAMUAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQAAAAAAAAAAAA7UEAAAAAbW90aW9ucy9VWAwAAAAAAAAAAAD1ARQAUEsBAhQDFAAAAAAAAAAAAGcUIK0EAAAABAAAABEAEAAAAAAAAAAAAKSBNgAAAG1vdGlvbnMvaWRsZS52cm1hVVgMAAAAAAAAAAAA9QEUAFBLAQIUAxQAAAAAAAAAAABDv6ajAgAAAAIAAAANABAAAAAAAAAAAACkgXkAAABtYW5pZmVzdC5qc29uVVgMAAAAAAAAAAAA9QEUAFBLBQYAAAAAAwADAOAAAAC2AAAAAAA="
+    },
+    {
+      "id": "producer-python-zipfile",
+      "expect": "accept",
+      "note": "What Python's zipfile writes by default: an external attribute holding permission bits with no file-type bits at all.",
+      "normative": false,
+      "currentOutcome": "unsafeArchive",
+      "finding": "The type check requires S_IFREG. Python writes 0o600 with no type nibble, so a perfectly ordinary archive reads as neither file nor directory.",
+      "archiveBase64": "UEsDBBQAAAAAAAAAAABDv6ajAgAAAAIAAAANAAAAbWFuaWZlc3QuanNvbnt9UEsBAhQDFAAAAAAAAAAAAEO/pqMCAAAAAgAAAA0AAAAAAAAAAAAAAIABAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAALQAAAAAA"
+    }
+  ]
+}

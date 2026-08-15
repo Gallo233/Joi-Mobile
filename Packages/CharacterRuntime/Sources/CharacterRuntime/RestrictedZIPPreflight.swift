@@ -340,7 +340,14 @@ enum RestrictedZIPPreflight {
             let mode = UInt16(external >> 16)
             let type = mode & 0o170000
             let expected: UInt16 = isDirectory ? 0o040000 : 0o100000
-            guard type == expected, mode & 0o111 == 0 else {
+            guard type == expected else {
+                throw CharacterPackageImportFailure(.unsafeArchive, .preflight)
+            }
+            // The execute bits are refused on files only. On a directory the same
+            // bit is the search bit: a directory without it cannot be entered, so
+            // every archiver writes 0o755 and refusing it refused every archive
+            // containing a folder — which is every Live2D package.
+            guard isDirectory || mode & 0o111 == 0 else {
                 throw CharacterPackageImportFailure(.unsafeArchive, .preflight)
             }
         } else if host == 0 || host == 10 {
