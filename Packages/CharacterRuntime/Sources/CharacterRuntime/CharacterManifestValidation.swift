@@ -929,17 +929,38 @@ enum CharacterTreeVerifier {
         )
     }
 
+    /// Content identity: what a package *is*, independent of where it was
+    /// unpacked (DEC-026).
+    ///
+    /// Paths enter the hash as their **NFC UTF-8 bytes**, and are ordered by
+    /// those bytes, not by the form the filesystem happened to return. Darwin
+    /// hands back a decomposed name for a file written composed, so hashing what
+    /// the enumerator returned made identity a property of the volume: the same
+    /// `.joi-character` installed under one identity here and a different one on
+    /// a filesystem that stores names verbatim.
+    ///
+    /// No test could see that, because Swift's `String` equality is canonical —
+    /// the old `normalized == path` guard compared NFC against NFD and returned
+    /// true. `Contracts/conformance/content-id.json` is what caught it, by
+    /// stating the rule in bytes and running it on both platforms.
     static func contentID(at root: URL) throws -> CharacterContentID {
         try verifyRoot(root)
-        let files = try regularFiles(at: root).sorted()
+        // The two forms are kept apart deliberately: the normalized one is what
+        // the identity is over, the on-disk one is the only string that opens
+        // the file.
+        let entries = try regularFiles(at: root)
+            .map { (normalized: try RestrictedZIPPolicy.normalizedPath($0), onDisk: $0) }
+            .sorted { Array($0.normalized.utf8).lexicographicallyPrecedes(Array($1.normalized.utf8)) }
         var hasher = SHA256()
         frame(Data("joi.character.content-tree.v1".utf8), into: &hasher)
-        for path in files {
+        for entry in entries {
             try Task.checkCancellation()
-            let normalized = try RestrictedZIPPolicy.normalizedPath(path)
-            guard normalized == path else { throw CharacterPackageImportFailure(.unsafeArchive, .seal) }
-            let fileDigest = try CharacterDigests.sha256File(root.appendingPathComponent(path), maximum: CharacterPackageLimits.maximumFileBytes, phase: .seal)
-            frame(Data(path.utf8), into: &hasher)
+            let fileDigest = try CharacterDigests.sha256File(
+                root.appendingPathComponent(entry.onDisk),
+                maximum: CharacterPackageLimits.maximumFileBytes,
+                phase: .seal
+            )
+            frame(Data(entry.normalized.utf8), into: &hasher)
             var size = fileDigest.size.bigEndian
             withUnsafeBytes(of: &size) { hasher.update(bufferPointer: $0) }
             frame(Data(fileDigest.digest.utf8), into: &hasher)

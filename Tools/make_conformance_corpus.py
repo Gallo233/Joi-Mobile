@@ -160,17 +160,13 @@ CASES: list[tuple[str, str, dict[str, bytes]]] = [
 #
 # See docs/DECISIONS.md DEC-026.
 PENDING: dict[str, str] = {
-    "decomposable-path": (
-        "The path is hashed as the bytes the filesystem hands back, not as the "
-        "bytes the package declared. Darwin returns 'café.txt' decomposed "
-        "(U+0065 U+0301) even when it was written composed (U+00E9), so iOS "
-        "computes this identity over NFD bytes while a port on ext4 computes it "
-        "over NFC bytes. The two never agree, and no test caught it because "
-        "Swift's String equality is canonical: the installer's "
-        "`normalized == path` guard compares NFC against NFD and returns true. "
-        "The rule as written here — hash NFC bytes — is the one that makes "
-        "identity a property of the package rather than of the volume."
-    ),
+    # Empty, and kept rather than deleted: the mechanism is how a divergence gets
+    # recorded instead of argued about, and the next one will want it.
+    #
+    # `decomposable-path` lived here until DEC-026 was closed. It was written
+    # from the rule, the iOS implementation disagreed with it for a month of
+    # commits, and the Kotlin twin agreed with it on its first compile — which is
+    # what made the divergence a measurement rather than an opinion.
 }
 
 CASES.append(

@@ -172,8 +172,6 @@
     {
       "id": "decomposable-path",
       "note": "A filename with a canonical decomposition, written composed. Every European accented name and several kana with dakuten land here.",
-      "normative": false,
-      "finding": "The path is hashed as the bytes the filesystem hands back, not as the bytes the package declared. Darwin returns 'café.txt' decomposed (U+0065 U+0301) even when it was written composed (U+00E9), so iOS computes this identity over NFD bytes while a port on ext4 computes it over NFC bytes. The two never agree, and no test caught it because Swift's String equality is canonical: the installer's `normalized == path` guard compares NFC against NFD and returns true. The rule as written here — hash NFC bytes — is the one that makes identity a property of the package rather than of the volume.",
       "files": [
         {
           "path": "café.txt",
