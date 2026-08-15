@@ -277,3 +277,24 @@
 - **Measured after the changes**, the same folder archived four ways: `zip -r`, `ditto -c -k`, Python `zipfile` and `zip -rX` are all admitted, and the `ditto` archive's plan contains its two real files with no sidecar. That is the evidence this decision rests on — not that the vectors pass, but that archives from the tools people actually use now import.
 - **What did not change:** ZIP64, multidisk, encryption, unsupported compression methods, traversals, absolute paths, backslashes, colons, control characters, case and normalization collisions, symlinks, executable *files*, directory entries carrying payload, non-UTF-8 names, overlapping ranges and every limit. The profile is narrower than the format in every way that touches what lands on disk.
 - **Why this stayed invisible until now:** the J1B corpus was built by the test code, which chose header fields that satisfied the parser. Nothing exercised an archive a person would actually hand the product. The three producer archives are carried in the corpus as non-normative vectors recording what happens today, so the finding cannot be lost between sessions.
+
+## DEC-030 — Android VRM: Filament supplies the GPU layer, Joi supplies all of VRM
+
+- **Status:** Accepted as the direction; **no prototype has been built**
+- **Date:** 2026-08-15
+- **What the renderer has to do**, read off `VRM/VRMStageSurface.swift` rather than imagined: load a GLB; load `.vrma` clips; blend animation and apply per-frame morph weights; drive one expression by name each frame (`setExpression(.aa, weight:)`) after the clip's own weights; run spring bones with a warm-up pass before the first animated frame; render MToon, which needs lights present or the model comes out flat; set a view matrix; draw per frame.
+- **Measured on 2026-08-15:**
+
+  | Fact | Value |
+  |---|---|
+  | Filament, Maven Central | `com.google.android.filament` 1.75.0 |
+  | `filament-android` / `gltfio-android` / `filament-utils-android` | 5.2 MB / 5.8 MB / 2.4 MB, multi-ABI |
+  | `matc`, the material compiler | ships in `filament-v1.75.0-mac.tgz`, 43.8 MB, build-time only |
+  | `filamat-android`, the *runtime* compiler | 12.5 MB — too large to ship for one material |
+  | **VRM libraries on Maven Central** | **zero results** |
+
+- **Decision:** Filament plus `gltfio` is the GPU layer — mesh, skinning, morph targets, material base, camera, frame loop. MToon is written as a Filament material and compiled to a `.filamat` blob by `matc` at build time, shipped as an asset; the runtime compiler is not admitted. Everything with VRM in its name is Joi's: 0.x→1.0 normalization, humanoid, expressions, LookAt, spring bones, node constraints, VRMA parsing and retargeting.
+- **The strategy document understates this, and the difference matters.** It says Android "likewise has no direct equivalent of UniVRM". iOS had one: VRMMetalKit, which already implements spring bones, MToon, expressions and VRMA. Android has **nothing** — the search returns zero. So the Android renderer is not the same amount of work as the iOS one was; it is the iOS work *plus* everything VRMMetalKit already did.
+- **Consequence for the shared-core question.** The document's advice to defer a shared VRM core rested on "extract it only when duplicate implementation cost is clearly visible". That cost is now visible before either side is written twice: Android must implement the whole VRM semantic layer from scratch, and iOS's implementation is a single-maintainer dependency with an open, unexplained hand-skinning defect (DEC-023). The parser, 0.x→1.0 normalization, humanoid and expression semantics, spring bones, constraints and VRMA retarget are all pure computation over model data with no GPU in them — which is exactly the shape that ports well. This is not a decision to build that core; it is a record that the premise for deferring it no longer holds and the question should be re-asked before Android renderer work starts.
+- **Not evaluated, and not claimed:** no prototype exists. Nothing here is evidence that Filament loads a VRM, that a hand-written MToon matches VRMMetalKit's output, that spring bones behave, or that any of it holds a frame rate on a real phone. The next slice is a bounded spike — one model, one clip, on the emulator and then on a device — and it should be run before any of this is treated as a plan.
+- **Unchanged:** DEC-003's exclusion of Unity, WKWebView and Three.js. Filament is a native renderer admitted the same way VRMMetalKit is on iOS: pinned, opt-in, app-target only, with the static fallback still testable.

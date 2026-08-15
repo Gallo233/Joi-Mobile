@@ -167,7 +167,10 @@ Not reusable, and no attempt should be made to force it:
    Application agreement is per application; an Android build is a separate
    application and needs its own review and approval. VRM-first applies here
    exactly as it does on iOS.
-3. **Which renderer.** Filament plus `gltfio` covers mesh, skinning, morph
-   targets and materials; MToon, humanoid normalization, LookAt, spring bones,
-   constraints and VRMA remain Joi's to write — the same division as iOS, with a
-   different GPU layer underneath.
+3. **Which renderer.** Settled as a direction in DEC-030: Filament plus `gltfio`
+   for the GPU layer, MToon compiled to a `.filamat` blob at build time, and
+   every VRM semantic — normalization, humanoid, expressions, LookAt, spring
+   bones, constraints, VRMA — written here. Note that this is *more* work than
+   the iOS renderer was, not the same: iOS had VRMMetalKit to build on and
+   Maven Central has no VRM library at all. No prototype has been built, so
+   nothing about fidelity or frame rate is claimed.
