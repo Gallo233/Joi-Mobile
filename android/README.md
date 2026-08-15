@@ -2,14 +2,15 @@
 
 The second native client. Same product contract, own implementation.
 
-This directory currently holds the **portable core** and nothing else: the
-character package contract, the strict manifest scanner, content identity,
-package admission and event-stream framing, in Kotlin, with no Android
-dependency and no third-party dependency at all. All of it is verified against
-`Contracts/conformance/` — the same vectors the iOS suite runs.
+This directory holds the **portable core** — the character package contract, the
+strict manifest scanner, content identity, package admission and event-stream
+framing, in Kotlin, with no Android dependency and no third-party dependency at
+all — and a **Compose shell** over it. The core is verified against
+`Contracts/conformance/`, the same vectors the iOS suite runs.
 
-There is no Compose UI, no renderer, no networking and no app module yet. That
-is deliberate and is explained under *Why this order* below.
+There is no renderer and no networking. The shell's stage and composer are
+placeholders that say so on screen. Why the core came before the shell is under
+*Why this order* below.
 
 ## What builds today
 
@@ -18,15 +19,21 @@ cd android
 ./gradlew test
 ```
 
-11 tests over the 100 conformance vectors, about a second once the toolchain is
-warm. No Android SDK is required, and none is used. The three modules are plain
-JVM:
+16 tests, about a second once the toolchain is warm. The three core modules are
+plain JVM and need no Android SDK:
 
 | Module | Mirrors | Contents |
 |---|---|---|
 | `companion-core` | `Packages/CompanionCore` | `CharacterPackageManifestV1`, `CompanionEventV1`, renderer kinds, limits, stable upstream codes |
 | `character-runtime` | `Packages/CharacterRuntime` | `StrictJson`, `PackagePath`, `ContentTreeIdentity`, `CharacterManifestAdmission`, the stable import codes |
 | `chat-feature` | `Packages/ChatFeature` | `SseFrameParser` |
+
+`:app` is the Android module: `MainActivity`, the two-surface Compose shell, and
+`CompanionSessionStore` — the single writer of character, thread, session and
+accepted transcript, written with no Android import so its rules are testable on
+the JVM in milliseconds rather than on a device. Verified on a Pixel 8 / API 37 /
+arm64 emulator: Chat → Map → Chat returns a capture differing from the first in
+zero of 2,473,200 pixels.
 
 `settings.gradle.kts` adds an `:app` module only when an Android SDK is actually
 present — the same ladder as `project.yml` → `project.live2d.yml` →
@@ -44,13 +51,20 @@ These four versions are one combination, not four independent choices:
 | Component | Version | Why this one |
 |---|---|---|
 | Gradle | 9.5.0 | AGP 9.3 requires ≥ 9.5.0 and ships 9.5.0 as its default |
-| Kotlin | 2.2.21 | Gradle 9 support starts at Kotlin 2.2; the Compose compiler always carries the Kotlin version |
-| Android Gradle Plugin | 9.3.1 | Latest stable; supports API 37 at most, which is the installed platform |
-| JDK | 17–24 | AGP 9.3 requires ≥ 17. **Android Studio's own JBR is 25, which Gradle does not accept** |
+| Kotlin | 2.4.10 | Applies to the plain-JVM modules only. AGP 9 compiles `:app`'s Kotlin itself and **refuses** the standalone `org.jetbrains.kotlin.android` plugin, so JetBrains' KGP-to-AGP table does not bind here |
+| Android Gradle Plugin | 9.3.1 | The first AGP supporting API 37, which the Compose artifacts require to compile against |
+| JDK | 17–24 | AGP requires ≥ 17. **Android Studio's own JBR is 25, which Gradle does not accept** |
 
-SDK side, both already at AGP 9.3's minimum: platform `android-37.0`, build-tools
-`36.0.0`. Installing them is where Google's licence gets accepted — which has to
-be a person, not a build script.
+Two traps cost hours here, both recorded in `gradle/libs.versions.toml`: every
+plugin must be declared in the *root* build with `apply false` or the Kotlin and
+Android plugins land in sibling classloaders and fail with a
+`NoClassDefFoundError` naming a class that is present in every AGP jar; and
+`kotlin("test")` is unavailable in `:app` for the same reason the Kotlin plugin
+is, so its test dependencies are written out by coordinate.
+
+SDK side: platform `android-37.0` and build-tools `36.0.0`. Installing them is
+where Google's licence gets accepted — which has to be a person, not a build
+script.
 
 ```bash
 JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-22.jdk/Contents/Home ./gradlew test
@@ -90,8 +104,8 @@ costs one stage rather than all of it — `JOI_SKIP_APP` keeps `:app` out of the
 build until the core is known good:
 
 ```bash
-JOI_SKIP_APP=1 JOI_GRADLE_MIRROR=aliyun ./gradlew test   # ~240 MB, expect 11 tests
-JOI_GRADLE_MIRROR=aliyun ./gradlew assembleDebug test    # the rest, expect 16
+JOI_SKIP_APP=1 JOI_GRADLE_MIRROR=aliyun ./gradlew test   # core only, ~240 MB
+JOI_GRADLE_MIRROR=aliyun ./gradlew assembleDebug test    # the rest, expect 16 tests
 ```
 
 ## Why this order
@@ -110,32 +124,37 @@ against prose.
 So the first slice is the part where divergence is silent and expensive, and it
 ships with the mechanism that keeps it from diverging again.
 
-That mechanism has already earned its keep, twice over.
+That mechanism has earned its keep repeatedly. Running the vectors against the
+shipping iOS implementation found, in order:
 
-Running the vectors against the shipping iOS implementation for the first time
-found three disagreements, two of which are fixed (DEC-026, DEC-028).
-
-The third is now demonstrated rather than predicted. `content identity of a
-materialised tree matches every vector` passes here, on every case including
-`decomposable-path`; the Swift twin has to skip that one. Two runners, one file,
-one of them right — which is exactly the shape of finding the corpus exists to
-produce, and is not a shape any amount of re-reading the Swift source would have
-given. See DEC-026.
+- a raw `NSError` escaping the stable-code boundary (fixed);
+- the declared asset list capped at 300 while the schema promised 2000, which
+  made an ordinary Live2D character unimportable (DEC-028);
+- content identity computed over filesystem bytes rather than package bytes, so
+  the same package had two identities on two platforms. The Kotlin twin
+  satisfied that vector on its first compile while the Swift one had to skip it
+  — the divergence measured rather than argued (DEC-026, now closed);
+- every archive containing a folder refused, because the execute-bit rule for
+  files was silently applied to directories, where the same bit is the search
+  bit every archiver writes (DEC-029);
+- and behind that, no mainstream archiver producing an importable archive at all
+  (DEC-029, four changes, now fixed and measured against `zip`, `ditto`, Python
+  and `zip -X`).
 
 ## Deliberately not ported yet
 
-The larger half of the installer:
+The installer's tree layer. What exists and what does not:
 
-- the restricted ZIP profile and its preflight;
-- per-asset digest verification, media magic-byte checks and the nested-archive
-  refusal;
-- the Live2D `.model3.json` reference closure and the VRM motion-table renderer
-  graph;
-- immutable content-addressed storage, activation leases and journaled removal.
+| Piece | Vectored | Ported to Kotlin |
+|---|---|---|
+| Strict scanner, admission, content identity, SSE framing | Yes | Yes |
+| Restricted ZIP profile | **Yes**, 45 archives in `zip-profile.json` | No |
+| Per-asset digests, media magic bytes, Live2D reference closure, VRM motion graph | No — needs a tree fixture | No |
+| Immutable storage, activation leases, journaled removal | No — stateful protocols, the wrong shape for vectors | No |
 
-None of it is vectored yet, so an Android port would be a *re-derivation* rather
-than a port, carrying the risk that implies. Growing the corpus to cover a tree
-fixture is the next slice, and it should come before the Kotlin code does.
+The ZIP profile is the next thing to port, because it is the only remaining
+security-critical piece that is already pinned by vectors: the port can be
+checked rather than trusted. Everything below it is still a re-derivation.
 
 ## What is genuinely reusable, and what is not
 
@@ -160,14 +179,11 @@ Not reusable, and no attempt should be made to force it:
 
 ## Open questions that belong to a decision, not to code
 
-1. **Path normalization in content identity** — DEC-026, and the reason the
-   `decomposable-path` vector is marked non-normative. Until it is settled, a
-   package with an accented or dakuten filename has two identities.
-2. **Live2D on Android is a second licence, not a second build.** The Expandable
+1. **Live2D on Android is a second licence, not a second build.** The Expandable
    Application agreement is per application; an Android build is a separate
    application and needs its own review and approval. VRM-first applies here
    exactly as it does on iOS.
-3. **Which renderer.** Settled as a direction in DEC-030: Filament plus `gltfio`
+2. **Which renderer.** Settled as a direction in DEC-030: Filament plus `gltfio`
    for the GPU layer, MToon compiled to a `.filamat` blob at build time, and
    every VRM semantic — normalization, humanoid, expressions, LookAt, spring
    bones, constraints, VRMA — written here. Note that this is *more* work than
