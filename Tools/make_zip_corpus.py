@@ -59,6 +59,7 @@ class Entry:
         disk_start: int = 0,
         crc_override: int | None = None,
         local_crc_override: int | None = None,
+        local_sizes_zero: bool = False,
         name_bytes: bytes | None = None,
     ):
         self.name = name
@@ -75,6 +76,7 @@ class Entry:
         self.disk_start = disk_start
         self.crc_override = crc_override
         self.local_crc_override = local_crc_override
+        self.local_sizes_zero = local_sizes_zero
 
     @property
     def payload(self) -> bytes:
@@ -95,10 +97,12 @@ def build(entries: list[Entry], *, comment: bytes = b"", eocd_overrides: dict | 
         offset = len(out)
         payload = e.payload
         local_crc = e.local_crc_override if e.local_crc_override is not None else e.crc
+        local_comp = 0 if e.local_sizes_zero else len(payload)
+        local_uncomp = 0 if e.local_sizes_zero else len(e.data)
         out += struct.pack(
             "<IHHHHHIIIHH",
             LOCAL_SIG, e.needed, e.flags, e.method, 0, 0,
-            local_crc, len(payload), len(e.data),
+            local_crc, local_comp, local_uncomp,
             len(e.name_bytes), len(e.local_extra),
         )
         out += e.name_bytes + e.local_extra + payload
@@ -182,10 +186,21 @@ def cases() -> list[dict]:
     add("strong-encryption", "unsupportedArchiveProfile",
         "Flag bit 6 is strong encryption.",
         build([Entry("manifest.json", b"{}", flags=0x0040)]))
-    add("data-descriptor", "unsupportedArchiveProfile",
-        "Flag bit 3 puts the sizes after the payload, so the local header cannot "
-        "be checked against the central directory before reading.",
+    add("data-descriptor-placeholder-local", "accept",
+        "Flag bit 3 says the writer streamed, so the local header holds zeros and "
+        "the real values trail the payload. Admitted (DEC-029) because Finder sets "
+        "it on every entry; the central directory stays authoritative.",
+        build([Entry("manifest.json", b"{}", flags=0x0008,
+                     local_crc_override=0, local_sizes_zero=True)]))
+    add("data-descriptor-filled-local", "accept",
+        "The same flag with the local header filled in anyway, which some writers "
+        "do. Either form is admitted; nothing between them is.",
         build([Entry("manifest.json", b"{}", flags=0x0008)]))
+    add("data-descriptor-local-disagrees", "malformedArchive",
+        "Flag bit 3 with a local header that is neither the placeholder nor the "
+        "truth. Two readers would disagree about this entry's size, which is the "
+        "ambiguity the flag is not permission to introduce.",
+        build([Entry("manifest.json", b"{}", flags=0x0008, local_crc_override=0xDEADBEEF)]))
     add("unsupported-method", "unsupportedArchiveProfile",
         "bzip2. Refused as unsupported rather than corrupt: the archive is fine, "
         "this reader is not.",
@@ -311,11 +326,7 @@ def cases() -> list[dict]:
             Entry("motions/idle.vrma", b"clip", extra=_ut() + _ux()),
             Entry("manifest.json", b"{}", extra=_ut() + _ux()),
         ]),
-        normative=False,
-        current="unsupportedArchiveProfile",
-        finding="Extra field 0x7875 (Unix UID/GID) is not in the allowlist. It "
-                "carries two integers and no path, so refusing it buys nothing "
-                "and costs every archive this tool produces.")
+        )
     add("producer-ditto", "accept",
         "What macOS `ditto -c -k` — the engine behind Finder's Compress — writes: "
         "an old-style Unix field, plus a __MACOSX sidecar tree.",
@@ -323,22 +334,16 @@ def cases() -> list[dict]:
             Entry("motions/", b"", external=DIRECTORY, extra=_old_ux()),
             Entry("motions/idle.vrma", b"clip", extra=_old_ux()),
             Entry("manifest.json", b"{}", extra=_old_ux()),
+            Entry("__MACOSX/", b"", external=DIRECTORY, extra=_old_ux()),
+            Entry("__MACOSX/._manifest.json", b"\x00\x05\x16\x07resource fork", extra=_old_ux()),
+            Entry(".DS_Store", b"\x00\x00\x00\x01Bud1", extra=_old_ux()),
         ]),
-        normative=False,
-        current="unsupportedArchiveProfile",
-        finding="Extra field 0x5855 (old Info-ZIP Unix) is not in the allowlist. "
-                "Separately, Finder archives carry a __MACOSX/ tree of resource "
-                "forks that a character package has no use for and that the "
-                "renderer graph will refuse as undeclared assets.")
+        )
     add("producer-python-zipfile", "accept",
         "What Python's zipfile writes by default: an external attribute holding "
         "permission bits with no file-type bits at all.",
         build([Entry("manifest.json", b"{}", external=0o600 << 16)]),
-        normative=False,
-        current="unsafeArchive",
-        finding="The type check requires S_IFREG. Python writes 0o600 with no "
-                "type nibble, so a perfectly ordinary archive reads as neither "
-                "file nor directory.")
+        )
 
     return out
 

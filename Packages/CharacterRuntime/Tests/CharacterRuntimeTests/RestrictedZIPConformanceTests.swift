@@ -72,6 +72,31 @@ final class RestrictedZIPConformanceTests: XCTestCase {
     }
 }
 
+extension RestrictedZIPConformanceTests {
+    /// Admitting a Finder archive is not the same as importing its bookkeeping.
+    /// The resource-fork tree and the folder metadata file are validated like
+    /// every other entry and then left out of the plan, so nothing writes them
+    /// and no renderer graph has to explain them.
+    func testAppleSidecarsAreValidatedAndThenNotExtracted() throws {
+        let corpus = try Conformance.load(ZIPCorpus.self, from: "zip-profile.json")
+        guard let vector = corpus.cases.first(where: { $0.id == "producer-ditto" }),
+              let bytes = Data(base64Encoded: vector.archiveBase64) else {
+            return XCTFail("the producer-ditto vector is missing")
+        }
+        let root = try Conformance.makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("candidate.zip")
+        try bytes.write(to: url)
+
+        let plan = try RestrictedZIPPreflight.plan(url)
+        XCTAssertEqual(plan.files.map(\.normalizedPath).sorted(), ["manifest.json", "motions/idle.vrma"])
+        XCTAssertFalse(
+            plan.files.contains { RestrictedZIPPolicy.isAppleSidecar($0.normalizedPath) },
+            "a sidecar reached the extraction plan"
+        )
+    }
+}
+
 struct ZIPCorpus: Decodable {
     struct Case: Decodable {
         let id: String

@@ -62,10 +62,22 @@
       "archiveBase64": "UEsDBBQAQAAAAAAAAABDv6ajAgAAAAIAAAANAAAAbWFuaWZlc3QuanNvbnt9UEsBAhQDFABAAAAAAAAAAEO/pqMCAAAAAgAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAALQAAAAAA"
     },
     {
-      "id": "data-descriptor",
-      "expect": "unsupportedArchiveProfile",
-      "note": "Flag bit 3 puts the sizes after the payload, so the local header cannot be checked against the central directory before reading.",
+      "id": "data-descriptor-placeholder-local",
+      "expect": "accept",
+      "note": "Flag bit 3 says the writer streamed, so the local header holds zeros and the real values trail the payload. Admitted (DEC-029) because Finder sets it on every entry; the central directory stays authoritative.",
+      "archiveBase64": "UEsDBBQACAAAAAAAAAAAAAAAAAAAAAAAAAANAAAAbWFuaWZlc3QuanNvbnt9UEsBAhQDFAAIAAAAAAAAAEO/pqMCAAAAAgAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAALQAAAAAA"
+    },
+    {
+      "id": "data-descriptor-filled-local",
+      "expect": "accept",
+      "note": "The same flag with the local header filled in anyway, which some writers do. Either form is admitted; nothing between them is.",
       "archiveBase64": "UEsDBBQACAAAAAAAAABDv6ajAgAAAAIAAAANAAAAbWFuaWZlc3QuanNvbnt9UEsBAhQDFAAIAAAAAAAAAEO/pqMCAAAAAgAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAALQAAAAAA"
+    },
+    {
+      "id": "data-descriptor-local-disagrees",
+      "expect": "malformedArchive",
+      "note": "Flag bit 3 with a local header that is neither the placeholder nor the truth. Two readers would disagree about this entry's size, which is the ambiguity the flag is not permission to introduce.",
+      "archiveBase64": "UEsDBBQACAAAAAAAAADvvq3eAgAAAAIAAAANAAAAbWFuaWZlc3QuanNvbnt9UEsBAhQDFAAIAAAAAAAAAEO/pqMCAAAAAgAAAA0AAAAAAAAAAAAAAKSBAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAALQAAAAAA"
     },
     {
       "id": "unsupported-method",
@@ -251,27 +263,18 @@
       "id": "producer-usr-bin-zip",
       "expect": "accept",
       "note": "What `zip -r` writes: an extended-timestamp field and a Unix UID/GID field, on every entry.",
-      "normative": false,
-      "currentOutcome": "unsupportedArchiveProfile",
-      "finding": "Extra field 0x7875 (Unix UID/GID) is not in the allowlist. It carries two integers and no path, so refusing it buys nothing and costs every archive this tool produces.",
       "archiveBase64": "UEsDBBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAIABgAbW90aW9ucy9VVAUAAwAAAAB1eAsAAQT1AQAABBQAAABQSwMEFAAAAAAAAAAAAGcUIK0EAAAABAAAABEAGABtb3Rpb25zL2lkbGUudnJtYVVUBQADAAAAAHV4CwABBPUBAAAEFAAAAGNsaXBQSwMEFAAAAAAAAAAAAEO/pqMCAAAAAgAAAA0AGABtYW5pZmVzdC5qc29uVVQFAAMAAAAAdXgLAAEE9QEAAAQUAAAAe31QSwECFAMUAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAYAAAAAAAAAAAA7UEAAAAAbW90aW9ucy9VVAUAAwAAAAB1eAsAAQT1AQAABBQAAABQSwECFAMUAAAAAAAAAAAAZxQgrQQAAAAEAAAAEQAYAAAAAAAAAAAApIE+AAAAbW90aW9ucy9pZGxlLnZybWFVVAUAAwAAAAB1eAsAAQT1AQAABBQAAABQSwECFAMUAAAAAAAAAAAAQ7+mowIAAAACAAAADQAYAAAAAAAAAAAApIGJAAAAbWFuaWZlc3QuanNvblVUBQADAAAAAHV4CwABBPUBAAAEFAAAAFBLBQYAAAAAAwADAPgAAADOAAAAAAA="
     },
     {
       "id": "producer-ditto",
       "expect": "accept",
       "note": "What macOS `ditto -c -k` — the engine behind Finder's Compress — writes: an old-style Unix field, plus a __MACOSX sidecar tree.",
-      "normative": false,
-      "currentOutcome": "unsupportedArchiveProfile",
-      "finding": "Extra field 0x5855 (old Info-ZIP Unix) is not in the allowlist. Separately, Finder archives carry a __MACOSX/ tree of resource forks that a character package has no use for and that the renderer graph will refuse as undeclared assets.",
-      "archiveBase64": "UEsDBBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAIABAAbW90aW9ucy9VWAwAAAAAAAAAAAD1ARQAUEsDBBQAAAAAAAAAAABnFCCtBAAAAAQAAAARABAAbW90aW9ucy9pZGxlLnZybWFVWAwAAAAAAAAAAAD1ARQAY2xpcFBLAwQUAAAAAAAAAAAAQ7+mowIAAAACAAAADQAQAG1hbmlmZXN0Lmpzb25VWAwAAAAAAAAAAAD1ARQAe31QSwECFAMUAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQAAAAAAAAAAAA7UEAAAAAbW90aW9ucy9VWAwAAAAAAAAAAAD1ARQAUEsBAhQDFAAAAAAAAAAAAGcUIK0EAAAABAAAABEAEAAAAAAAAAAAAKSBNgAAAG1vdGlvbnMvaWRsZS52cm1hVVgMAAAAAAAAAAAA9QEUAFBLAQIUAxQAAAAAAAAAAABDv6ajAgAAAAIAAAANABAAAAAAAAAAAACkgXkAAABtYW5pZmVzdC5qc29uVVgMAAAAAAAAAAAA9QEUAFBLBQYAAAAAAwADAOAAAAC2AAAAAAA="
+      "archiveBase64": "UEsDBBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAIABAAbW90aW9ucy9VWAwAAAAAAAAAAAD1ARQAUEsDBBQAAAAAAAAAAABnFCCtBAAAAAQAAAARABAAbW90aW9ucy9pZGxlLnZybWFVWAwAAAAAAAAAAAD1ARQAY2xpcFBLAwQUAAAAAAAAAAAAQ7+mowIAAAACAAAADQAQAG1hbmlmZXN0Lmpzb25VWAwAAAAAAAAAAAD1ARQAe31QSwMEFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkAEABfX01BQ09TWC9VWAwAAAAAAAAAAAD1ARQAUEsDBBQAAAAAAAAAAACKBN5wEQAAABEAAAAYABAAX19NQUNPU1gvLl9tYW5pZmVzdC5qc29uVVgMAAAAAAAAAAAA9QEUAAAFFgdyZXNvdXJjZSBmb3JrUEsDBBQAAAAAAAAAAABNYiprCAAAAAgAAAAJABAALkRTX1N0b3JlVVgMAAAAAAAAAAAA9QEUAAAAAAFCdWQxUEsBAhQDFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAEAAAAAAAAAAAAO1BAAAAAG1vdGlvbnMvVVgMAAAAAAAAAAAA9QEUAFBLAQIUAxQAAAAAAAAAAABnFCCtBAAAAAQAAAARABAAAAAAAAAAAACkgTYAAABtb3Rpb25zL2lkbGUudnJtYVVYDAAAAAAAAAAAAPUBFABQSwECFAMUAAAAAAAAAAAAQ7+mowIAAAACAAAADQAQAAAAAAAAAAAApIF5AAAAbWFuaWZlc3QuanNvblVYDAAAAAAAAAAAAPUBFABQSwECFAMUAAAAAAAAAAAAAAAAAAAAAAAAAAAACQAQAAAAAAAAAAAA7UG2AAAAX19NQUNPU1gvVVgMAAAAAAAAAAAA9QEUAFBLAQIUAxQAAAAAAAAAAACKBN5wEQAAABEAAAAYABAAAAAAAAAAAACkge0AAABfX01BQ09TWC8uX21hbmlmZXN0Lmpzb25VWAwAAAAAAAAAAAD1ARQAUEsBAhQDFAAAAAAAAAAAAE1iKmsIAAAACAAAAAkAEAAAAAAAAAAAAKSBRAEAAC5EU19TdG9yZVVYDAAAAAAAAAAAAPUBFABQSwUGAAAAAAYABgDEAQAAgwEAAAAA"
     },
     {
       "id": "producer-python-zipfile",
       "expect": "accept",
       "note": "What Python's zipfile writes by default: an external attribute holding permission bits with no file-type bits at all.",
-      "normative": false,
-      "currentOutcome": "unsafeArchive",
-      "finding": "The type check requires S_IFREG. Python writes 0o600 with no type nibble, so a perfectly ordinary archive reads as neither file nor directory.",
       "archiveBase64": "UEsDBBQAAAAAAAAAAABDv6ajAgAAAAIAAAANAAAAbWFuaWZlc3QuanNvbnt9UEsBAhQDFAAAAAAAAAAAAEO/pqMCAAAAAgAAAA0AAAAAAAAAAAAAAIABAAAAAG1hbmlmZXN0Lmpzb25QSwUGAAAAAAEAAQA7AAAALQAAAAAA"
     }
   ]

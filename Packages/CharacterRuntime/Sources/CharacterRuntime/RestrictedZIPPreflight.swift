@@ -48,6 +48,14 @@ enum RestrictedZIPPolicy {
         return normalized + (isDirectory ? "/" : "")
     }
 
+    /// Apple archiver bookkeeping: the resource-fork sidecar tree and the folder
+    /// metadata file. Matched on the normalized path so a nested `.DS_Store` is
+    /// caught too.
+    static func isAppleSidecar(_ normalizedPath: String) -> Bool {
+        if normalizedPath == "__MACOSX" || normalizedPath.hasPrefix("__MACOSX/") { return true }
+        return normalizedPath == ".DS_Store" || normalizedPath.hasSuffix("/.DS_Store")
+    }
+
     static func collisionKey(_ path: String) -> String {
         path.precomposedStringWithCanonicalMapping.folding(
             options: [.caseInsensitive],
@@ -261,11 +269,20 @@ enum RestrictedZIPPreflight {
             guard localHeaderEnd <= centralOffset,
                   localFlags == flags,
                   localMethod == method,
-                  localCRC == crc,
-                  localCompressed == compressed32,
-                  localUncompressed == uncompressed32,
                   localNameLength == nameLength,
                   localVariable.prefix(localNameLength) == Data(originalPath.utf8) else {
+                throw CharacterPackageImportFailure(.malformedArchive, .preflight)
+            }
+            // With a data descriptor the local header is required to hold zeros
+            // and the real values trail the payload. Some writers fill both in
+            // anyway, so either is accepted — but nothing else is, and without the
+            // flag the two headers must still agree exactly.
+            let streamed = flags & Self.dataDescriptorFlag != 0
+            let localMatchesCentral = localCRC == crc
+                && localCompressed == compressed32
+                && localUncompressed == uncompressed32
+            let localIsPlaceholder = localCRC == 0 && localCompressed == 0 && localUncompressed == 0
+            guard localMatchesCentral || (streamed && localIsPlaceholder) else {
                 throw CharacterPackageImportFailure(.malformedArchive, .preflight)
             }
             try validateExtra(Data(localVariable.dropFirst(localNameLength)))
@@ -280,6 +297,17 @@ enum RestrictedZIPPreflight {
                 guard compressed32 == 0, uncompressed32 == 0 else {
                     throw CharacterPackageImportFailure(.unsafeArchive, .preflight)
                 }
+            } else if RestrictedZIPPolicy.isAppleSidecar(normalized) {
+                // Finder writes a __MACOSX/ tree of resource forks beside the real
+                // entries, and .DS_Store into every folder. Neither is package
+                // content, and a renderer graph would refuse them as undeclared
+                // assets — so a Finder archive would be unimportable for a reason
+                // the user cannot see or act on.
+                //
+                // Deliberately skipped *here*, after every check above has already
+                // run: a hostile entry hiding under __MACOSX/ is refused on the
+                // same terms as any other, it simply is not extracted.
+                ()
             } else {
                 let compressed = UInt64(compressed32)
                 let uncompressed = UInt64(uncompressed32)
@@ -321,14 +349,26 @@ enum RestrictedZIPPreflight {
         return nil
     }
 
+    /// Flag bit 3 says the writer streamed: the local header carries zeros and
+    /// the true CRC and sizes follow the payload. It is admitted (DEC-029)
+    /// because macOS Finder sets it on every entry, and refusing it refused the
+    /// most likely way a Mac user produces an archive.
+    ///
+    /// Admitting it costs one thing only: the local header can no longer confirm
+    /// the central directory's sizes. That confirmation was never the guarantee —
+    /// the central directory is what every extractor treats as authoritative, its
+    /// values are still bounded here, and the extracted bytes are still hashed
+    /// against the manifest afterwards. Encryption stays refused, because nothing
+    /// here can read those bytes at all.
+    static let dataDescriptorFlag: UInt16 = 0x0008
+
     private static func validateFlags(_ flags: UInt16, method: UInt16) throws {
         let encryption: UInt16 = 0x0001 | 0x0040
-        let dataDescriptor: UInt16 = 0x0008
-        guard flags & encryption == 0, flags & dataDescriptor == 0 else {
+        guard flags & encryption == 0 else {
             throw CharacterPackageImportFailure(.unsupportedArchiveProfile, .preflight)
         }
         let compressionOptions: UInt16 = method == 8 ? 0x0006 : 0
-        let allowed: UInt16 = 0x0800 | compressionOptions
+        let allowed: UInt16 = 0x0800 | dataDescriptorFlag | compressionOptions
         guard flags & ~allowed == 0 else {
             throw CharacterPackageImportFailure(.unsupportedArchiveProfile, .preflight)
         }
@@ -340,7 +380,12 @@ enum RestrictedZIPPreflight {
             let mode = UInt16(external >> 16)
             let type = mode & 0o170000
             let expected: UInt16 = isDirectory ? 0o040000 : 0o100000
-            guard type == expected else {
+            // A zero type nibble means the writer recorded permissions and no
+            // file type — Python's zipfile and several Java libraries do this. It
+            // is not a way to smuggle a link past the check: a symbolic link is
+            // only a link when S_IFLNK is *set*, so an absent type is an absent
+            // claim, not a false one.
+            guard type == expected || type == 0 else {
                 throw CharacterPackageImportFailure(.unsafeArchive, .preflight)
             }
             // The execute bits are refused on files only. On a directory the same
@@ -375,6 +420,16 @@ enum RestrictedZIPPreflight {
                 guard length >= 1, length <= 13 else { throw CharacterPackageImportFailure(.unsupportedArchiveProfile, .preflight) }
             case 0x000a:
                 guard length >= 4 else { throw CharacterPackageImportFailure(.unsupportedArchiveProfile, .preflight) }
+            // Info-ZIP's Unix fields. Both carry integers — uid, gid, timestamps —
+            // and neither carries a path or a link target, so the length is
+            // checked and the body ignored. They are refused nowhere else in the
+            // industry, and `zip` and Finder write one or the other on every
+            // entry: without these two, no archive a person actually produces can
+            // be imported (DEC-029).
+            case 0x7875:
+                guard length >= 3, length <= 64 else { throw CharacterPackageImportFailure(.unsupportedArchiveProfile, .preflight) }
+            case 0x5855:
+                guard length >= 8, length <= 64 else { throw CharacterPackageImportFailure(.unsupportedArchiveProfile, .preflight) }
             default:
                 throw CharacterPackageImportFailure(.unsupportedArchiveProfile, .preflight)
             }
