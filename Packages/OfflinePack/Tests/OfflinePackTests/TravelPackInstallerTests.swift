@@ -154,6 +154,75 @@ final class TravelPackInstallerTests: XCTestCase {
         }
     }
 
+    // MARK: - FAIL-029 storageInsufficient
+
+    /// A pack the device cannot hold is refused **through `install`**, before
+    /// anything is copied, with both numbers.
+    ///
+    /// Driven by what the volume reports rather than by filling the disk. The
+    /// first version of this test called the space check directly, which left
+    /// the call site inside `install` untested — deleting it passed the whole
+    /// suite. Going through `install` is the point.
+    func testAPackTooLargeForTheDeviceIsRefusedWithBothNumbers() async throws {
+        let fixture = try PackFixture()
+        defer { fixture.cleanup() }
+        let installer = TravelPackInstaller(root: fixture.store, availableBytes: { _ in 4_096 })
+
+        do {
+            _ = try await installer.install(from: fixture.candidate)
+            XCTFail("a pack larger than the volume must be refused")
+        } catch let error as OfflinePackError {
+            guard case let .storageInsufficient(required, available) = error else {
+                return XCTFail("expected storageInsufficient, got \(error)")
+            }
+            XCTAssertEqual(available, 4_096)
+            XCTAssertGreaterThan(required, available)
+            XCTAssertGreaterThanOrEqual(
+                required,
+                TravelPackInstaller.storageMarginBytes,
+                "the requirement includes the pack's own bytes plus the margin"
+            )
+        }
+
+        // Refused before copying: nothing reached the store.
+        let packs = fixture.store.appendingPathComponent("packs", isDirectory: true)
+        XCTAssertTrue(
+            ((try? FileManager.default.contentsOfDirectory(atPath: packs.path)) ?? []).isEmpty,
+            "a space refusal must not leave a pack behind"
+        )
+    }
+
+    /// A volume with room installs normally, so the check cannot be satisfied by
+    /// refusing everything.
+    func testAPackThatFitsIsNotRefusedForSpace() async throws {
+        let fixture = try PackFixture()
+        defer { fixture.cleanup() }
+        let installer = TravelPackInstaller(root: fixture.store, availableBytes: { _ in 1 << 40 })
+        _ = try await installer.install(from: fixture.candidate)
+    }
+
+    /// A volume that declines to report capacity is treated as having room:
+    /// refusing an import because the filesystem would not answer would fail
+    /// closed on the wrong thing.
+    func testAVolumeThatCannotReportCapacityDoesNotBlockTheImport() async throws {
+        let fixture = try PackFixture()
+        defer { fixture.cleanup() }
+        let installer = TravelPackInstaller(root: fixture.store, availableBytes: { _ in nil })
+        _ = try await installer.install(from: fixture.candidate)
+    }
+
+    /// The check runs before anything is copied, so a completed install leaves
+    /// no staging directory behind either.
+    func testAnInstallLeavesNoStagingBehind() async throws {
+        let fixture = try PackFixture()
+        defer { fixture.cleanup() }
+        _ = try await TravelPackInstaller(root: fixture.store).install(from: fixture.candidate)
+
+        let staging = fixture.store.appendingPathComponent("staging", isDirectory: true)
+        let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: staging.path)) ?? []
+        XCTAssertTrue(leftovers.isEmpty, "staging must not accumulate: \(leftovers)")
+    }
+
     // MARK: - Nothing is disturbed by a refusal
 
     /// `FAIL-026`: "keep last valid version". A refused candidate must not touch

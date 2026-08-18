@@ -34,6 +34,13 @@ public enum OfflinePackError: Error, Equatable, Sendable {
     /// Sealing the verified pack into the store did not produce the pack that
     /// was verified.
     case activationFailed
+
+    /// `FAIL-029 storageInsufficient`: the device cannot hold this pack.
+    ///
+    /// Carries both numbers because the state's whole requirement is to show
+    /// required against available — "not enough space" without them tells the
+    /// user nothing they can act on.
+    case storageInsufficient(requiredBytes: Int, availableBytes: Int)
 }
 
 public struct OfflinePackVerifier: Sendable {

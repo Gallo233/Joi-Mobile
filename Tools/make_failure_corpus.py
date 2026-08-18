@@ -130,11 +130,16 @@ STATUS: dict[str, tuple[str, str, list[str], str]] = {
     ),
     "FAIL-028": ("absent", "MapFeature", [], "No navigation start and no system-maps handoff exist."),
     "FAIL-029": (
-        "absent",
-        "CharacterRuntime, OfflinePack",
-        [],
-        "Archive and expansion ceilings are enforced, but free space is never consulted, which "
-        "is what this state is about.",
+        "partial",
+        "OfflinePack, App",
+        ["TravelPackInstallerTests", "TravelPackImportTests"],
+        "Travel-pack import is complete: the exact byte requirement is known before anything is "
+        "copied, the refusal carries required and available, and a failed copy removes its "
+        "staging directory rather than leaving a partial one. Character-package import is not "
+        "covered — its expanded size is only known while streaming, and telling the user what "
+        "to free up needs a failure reason carrying both numbers, which widens a taxonomy the "
+        "Kotlin core mirrors and the conformance vectors cover. Export does not exist at all "
+        "(`JM-P0-023`).",
     ),
     "FAIL-030": (
         "absent",

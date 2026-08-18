@@ -429,9 +429,21 @@ final class AppModel {
             return String(localized: "这个路线包已过期；当前路线没有变化。")
         case .missingRights:
             return String(localized: "这个路线包没有写明使用权利；当前路线没有变化。")
+        case let .storageInsufficient(required, available):
+            // Both numbers, because `FAIL-029` is about telling the user what
+            // they would have to free up. "Not enough space" alone is not
+            // actionable.
+            return String(
+                localized: "空间不足：需要 \(Self.megabytes(required)) MB，可用 \(Self.megabytes(available)) MB；当前路线没有变化。"
+            )
         default:
             return String(localized: "这个路线包没有通过校验；当前路线没有变化。")
         }
+    }
+
+    /// Whole megabytes, rounded up, so a refusal never reads as needing 0 MB.
+    static func megabytes(_ bytes: Int) -> Int {
+        max(0, Int((Double(bytes) / (1_024 * 1_024)).rounded(.up)))
     }
 
     private static func defaultPackRoot() -> URL {

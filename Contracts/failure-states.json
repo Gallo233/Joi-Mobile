@@ -297,10 +297,13 @@
       "id": "FAIL-029",
       "state": "storageInsufficient",
       "cancellation": "Abort atomic import/download/export; remove staging and preserve current data",
-      "status": "absent",
-      "owner": "CharacterRuntime, OfflinePack",
-      "evidence": [],
-      "gap": "Archive and expansion ceilings are enforced, but free space is never consulted, which is what this state is about."
+      "status": "partial",
+      "owner": "OfflinePack, App",
+      "evidence": [
+        "TravelPackInstallerTests",
+        "TravelPackImportTests"
+      ],
+      "gap": "Travel-pack import is complete: the exact byte requirement is known before anything is copied, the refusal carries required and available, and a failed copy removes its staging directory rather than leaving a partial one. Character-package import is not covered — its expanded size is only known while streaming, and telling the user what to free up needs a failure reason carrying both numbers, which widens a taxonomy the Kotlin core mirrors and the conformance vectors cover. Export does not exist at all (`JM-P0-023`)."
     },
     {
       "id": "FAIL-030",

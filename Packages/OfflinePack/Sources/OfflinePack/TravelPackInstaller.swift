@@ -87,12 +87,32 @@ public actor TravelPackInstaller {
     /// inventing a second set of numbers.
     static let maximumFileCount = 2_000
     static let maximumTotalBytes = 512 * 1_024 * 1_024
+    /// Room for the directory entries and metadata the copy also writes. Small
+    /// and fixed, because a percentage of the pack size would be a guess that
+    /// grows with the wrong thing.
+    static let storageMarginBytes = 1_024 * 1_024
 
     private let root: URL
     private let verifier = OfflinePackVerifier()
+    private let availableBytes: @Sendable (URL) -> Int64?
 
-    public init(root: URL) {
+    /// `availableBytes` is a seam, not a convenience: the space check can only
+    /// be exercised through `install` by controlling what the volume reports,
+    /// and a test that filled the real disk to reach the same branch would be
+    /// testing the filesystem while breaking the machine.
+    public init(
+        root: URL,
+        availableBytes: @escaping @Sendable (URL) -> Int64? = TravelPackInstaller.volumeCapacity
+    ) {
         self.root = root
+        self.availableBytes = availableBytes
+    }
+
+    /// What the volume holding `url` reports as available for important usage.
+    public static let volumeCapacity: @Sendable (URL) -> Int64? = { url in
+        let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        guard let capacity = values?.volumeAvailableCapacityForImportantUsage else { return nil }
+        return Int64(capacity)
     }
 
     /// Verifies a candidate directory and, only if everything holds, seals it
@@ -111,8 +131,11 @@ public actor TravelPackInstaller {
             throw OfflinePackError.tooManyFiles
         }
 
-        try verifyDeclaredFiles(manifest, in: candidate)
+        let declaredBytes = try verifyDeclaredFiles(manifest, in: candidate)
         try refuseUndeclaredFiles(manifest, in: candidate)
+        // Checked before anything is copied, so a full device costs the user a
+        // message rather than a half-written staging directory (`FAIL-029`).
+        try requireRoom(for: declaredBytes)
 
         let content = try readContent(manifest, in: candidate)
         let route = AcceptedNavigationRoute(
@@ -175,7 +198,8 @@ public actor TravelPackInstaller {
     /// Missing is `FAIL-025`; wrong is `FAIL-026`. They are different errors
     /// because they need different recoveries — one is a redownload, the other
     /// is a pack you should not trust.
-    private func verifyDeclaredFiles(_ manifest: TravelPackManifestV1, in candidate: URL) throws {
+    @discardableResult
+    private func verifyDeclaredFiles(_ manifest: TravelPackManifestV1, in candidate: URL) throws -> Int {
         var total = 0
         for file in manifest.files {
             let url = try Self.resolve(file.path, in: candidate)
@@ -193,6 +217,27 @@ public actor TravelPackInstaller {
             guard try Self.sha256(of: url) == file.sha256.lowercased() else {
                 throw OfflinePackError.hashMismatch(file.path)
             }
+        }
+        return total
+    }
+
+    /// Refuses an import the device cannot complete, with both numbers.
+    ///
+    /// The staged copy is a second copy of the pack, so the space needed is the
+    /// pack's own size — this asks for that plus a small margin for the
+    /// directory entries themselves rather than a multiplier nobody could
+    /// justify. A volume that cannot answer is treated as having room: refusing
+    /// an import because the filesystem declined to report capacity would fail
+    /// closed on the wrong thing.
+    private func requireRoom(for requiredBytes: Int) throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        guard let available = availableBytes(root) else { return }
+        let needed = requiredBytes + Self.storageMarginBytes
+        guard available >= Int64(needed) else {
+            throw OfflinePackError.storageInsufficient(
+                requiredBytes: needed,
+                availableBytes: Int(clamping: available)
+            )
         }
     }
 
@@ -231,7 +276,14 @@ public actor TravelPackInstaller {
             at: staging.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        try FileManager.default.copyItem(at: candidate, to: staging)
+        do {
+            try FileManager.default.copyItem(at: candidate, to: staging)
+        } catch {
+            // Out of space mid-copy, or any other write failure: the partial
+            // staging directory goes, and the installed pack is untouched.
+            try? FileManager.default.removeItem(at: staging)
+            throw OfflinePackError.activationFailed
+        }
 
         do {
             if FileManager.default.fileExists(atPath: destination.path) {

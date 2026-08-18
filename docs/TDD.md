@@ -695,6 +695,40 @@ and Map introduction is the Map surface — adding pages in front of them would 
 onboarding for its own sake, and §3.2 defines first run as complete once a
 character is visible and a message can be sent.
 
+### 6.17 G2-J5B — Refusing an import the device cannot finish
+
+`FAIL-029 storageInsufficient` asks that an import which cannot complete
+atomically shows required against available space, removes its staging and
+preserves current data. Free space was consulted nowhere in the repository —
+`TravelPackInstaller`, written the day before, copied a whole directory into the
+store without ever asking whether it would fit.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J5B-01` | The exact byte requirement is known before anything is copied, and an import that will not fit is refused there rather than part-way through | OfflinePack / `TravelPackInstaller.requireRoom` | space-refusal test through `install` |
+| `J5B-02` | The refusal carries required **and** available, and the App shows both in whole megabytes rounded up | OfflinePack + App / `OfflinePackError.storageInsufficient`, `AppModel.packFailureMessage` | both-numbers tests |
+| `J5B-03` | A volume that cannot report capacity does not block the import: failing closed on a filesystem that declined to answer would refuse the wrong thing | OfflinePack / `availableBytes` seam | unreported-capacity test |
+| `J5B-04` | A failed copy removes its staging directory, so a part-written import leaves nothing behind and the installed pack is untouched | OfflinePack / `seal` | staging tests |
+
+The capacity source is injected. That is a seam rather than a convenience: the
+refusal branch can only be reached through `install` by controlling what the
+volume reports, and a test that filled the real disk would be testing the
+filesystem while breaking the machine.
+
+**The first version of these tests was wrong in a way worth recording.** They
+called the space check directly, so the call site inside `install` was never
+exercised — deleting it left the whole suite green. The tests now go through
+`install`, and the same mutation produces two failures. This is the third time
+this session a test has been found asserting against a path the product does not
+take.
+
+`FAIL-029` moves to **partial**, not closed. Character-package import is not
+covered: its expanded size is only known while streaming, and telling the user
+what to free up needs a failure reason carrying both numbers, which widens a
+taxonomy the Kotlin core mirrors and the conformance vectors cover — a decision
+worth making on its own rather than as a side effect. Export does not exist at
+all (`JM-P0-023`).
+
 ## 7. Map, navigation and offline PoC
 
 - Wrap MapLibre Native in `MapSurfaceProvider`; it renders online styles and verified downloaded corridor resources but never owns route truth.

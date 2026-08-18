@@ -101,12 +101,35 @@ final class TravelPackImportTests: XCTestCase {
         XCTAssertEqual(model.packImportMessage, "步行进行中，先结束再导入路线包。")
     }
 
+    /// `FAIL-029` — a space refusal names both numbers, because "not enough
+    /// space" alone tells the user nothing they can act on.
+    func testAStorageRefusalNamesRequiredAndAvailable() {
+        let message = AppModel.packFailureMessage(
+            OfflinePackError.storageInsufficient(
+                requiredBytes: 12 * 1_024 * 1_024,
+                availableBytes: 3 * 1_024 * 1_024
+            )
+        )
+        XCTAssertTrue(message.contains("12"), message)
+        XCTAssertTrue(message.contains("3"), message)
+        XCTAssertTrue(message.contains("当前路线没有变化"), message)
+    }
+
+    /// Rounded up, so a refusal never claims to need zero megabytes.
+    func testASmallRequirementStillReadsAsAtLeastOneMegabyte() {
+        XCTAssertEqual(AppModel.megabytes(1), 1)
+        XCTAssertEqual(AppModel.megabytes(0), 0)
+        XCTAssertEqual(AppModel.megabytes(1_024 * 1_024), 1)
+        XCTAssertEqual(AppModel.megabytes(1_024 * 1_024 + 1), 2)
+    }
+
     /// Every refusal maps to copy that says the route is unchanged, so no
     /// failure can read as a partial import.
     func testEveryRefusalSaysTheRouteIsUnchanged() {
         let errors: [OfflinePackError] = [
             .missingFile("route.json"), .expired, .missingRights, .hashMismatch("x"),
             .undeclaredFile("x"), .invalidManifest, .unsupportedSchema, .activationFailed,
+            .storageInsufficient(requiredBytes: 1, availableBytes: 0),
         ]
         for error in errors {
             XCTAssertTrue(
