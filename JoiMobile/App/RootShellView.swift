@@ -15,6 +15,18 @@ struct RootShellView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+            // Above the surface, below nothing: it can be dismissed with one
+            // tap and the app underneath is already usable.
+            if model.isWelcomePresented {
+                WelcomeView(
+                    characterName: model.currentCharacterName,
+                    onDismiss: { model.completeWelcome() }
+                )
+                .padding(.bottom, 140)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(1)
+            }
+
             HStack(spacing: 10) {
                 SurfaceSwitcher(selection: model.selectedSurface) { surface in
                     withAnimation(.snappy(duration: 0.25)) {
@@ -38,6 +50,7 @@ struct RootShellView: View {
             .padding(.bottom, 10)
         }
         .background(Color(.systemGroupedBackground))
+        .animation(.snappy(duration: 0.28), value: model.isWelcomePresented)
         .task { await model.restoreActiveCharacter() }
         .sheet(isPresented: $model.isCharacterLibraryPresented) {
             CharacterLibraryView(model: model)

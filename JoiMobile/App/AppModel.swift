@@ -57,6 +57,14 @@ final class AppModel {
         let generation: RendererGeneration
     }
     var selectedSurface: PrimarySurface = .chat
+    /// The one-time welcome (`G2-J5A`). It explains what stays on this device
+    /// and what durable memory means before anything durable can happen, and it
+    /// is an overlay rather than a gate: PRD §3.2 says first run is complete once
+    /// a character is visible and a message can be sent, so nothing here may
+    /// stand between the user and that.
+    var isWelcomePresented = false
+    @ObservationIgnored private let defaults: UserDefaults
+    static let welcomeSeenKey = "joi.first-run.welcome-seen.v1"
     var isCharacterLibraryPresented = false
     var characterLibraryState: CharacterLibraryState = .idle
     var installedCharacters: [CharacterPackageCatalogEntry] = []
@@ -97,9 +105,6 @@ final class AppModel {
     /// Foreground-only location for a cached walk (`G2-J3A`).
     let walkLocation = WalkLocationProvider()
 
-    /// The cached walk on the Map surface, and the latest reading of where the
-    /// user is along it. The reading is a projection: `JourneyContextStore` is
-    /// still the only thing that records progress.
     /// The walk on the Map surface: a verified travel pack's tour when one is
     /// installed, otherwise the bundled sample. Swapped only between walks —
     /// changing the route under a walk in progress would invalidate the
@@ -109,6 +114,8 @@ final class AppModel {
     private(set) var installedPack: InstalledTravelPack?
     private(set) var packImportMessage: String?
     @ObservationIgnored private lazy var packInstaller = TravelPackInstaller(root: Self.defaultPackRoot())
+    /// The latest reading of where the user is along the walk. A projection:
+    /// `JourneyContextStore` is still the only thing that records progress.
     private(set) var walkObservation: CachedRouteProgressObservation?
     private(set) var isWalking = false
     /// Internal rather than private so a test can feed a reading through the
@@ -179,10 +186,13 @@ final class AppModel {
         renderer: any CharacterRenderer = StaticCharacterRenderer(),
         chatGateway: (any ChatGateway)? = nil,
         memoryStore: (any MemoryRepository)? = nil,
+        defaults: UserDefaults = .standard,
         initialSelection: CharacterSelection = CharacterSelection(characterID: "joi.starter", displayName: "Joi"),
         threadID: String = "thread.local",
         sessionID: String = "session.local"
     ) {
+        self.defaults = defaults
+        isWelcomePresented = !defaults.bool(forKey: Self.welcomeSeenKey)
         self.installer = installer ?? CharacterPackageInstaller(root: Self.defaultCharacterRoot())
         self.memoryStore = memoryStore ?? MemoryStore(fileURL: MemoryStore.defaultFileURL())
         self.renderer = renderer
@@ -203,6 +213,13 @@ final class AppModel {
             threadID: threadID,
             sessionID: sessionID
         )
+    }
+
+    /// Dismisses the welcome for good. Reading it is not a requirement, so this
+    /// is the same call whether the user read it or waved it away.
+    func completeWelcome() {
+        isWelcomePresented = false
+        defaults.set(true, forKey: Self.welcomeSeenKey)
     }
 
     func select(_ surface: PrimarySurface) { selectedSurface = surface }
@@ -233,12 +250,12 @@ final class AppModel {
     /// falls back rather than being restored blindly.
     func restoreActiveCharacter() async {
         await refreshInstalledCharacters()
-        guard let raw = UserDefaults.standard.string(forKey: Self.activeCharacterKey) else { return }
+        guard let raw = defaults.string(forKey: Self.activeCharacterKey) else { return }
         let wanted = CharacterInstallationID(rawValue: raw)
         guard let entry = installedCharacters.first(where: {
             $0.installationID == wanted && $0.available && $0.activationAllowed
         }) else {
-            UserDefaults.standard.removeObject(forKey: Self.activeCharacterKey)
+            defaults.removeObject(forKey: Self.activeCharacterKey)
             return
         }
         startActivation(entry)
@@ -1025,7 +1042,7 @@ final class AppModel {
             // Remembered so the companion the user was talking to is still there
             // after a restart. Only the identifier is stored; the installer
             // revalidates it on the next launch before anything is drawn.
-            UserDefaults.standard.set(installationID.rawValue, forKey: Self.activeCharacterKey)
+            defaults.set(installationID.rawValue, forKey: Self.activeCharacterKey)
             if isCurrent(generation) {
                 characterLibraryState = .idle
             }
@@ -1054,8 +1071,8 @@ final class AppModel {
             if stageContent?.installationID == entry.installationID {
                 stageContent = nil
             }
-            if UserDefaults.standard.string(forKey: Self.activeCharacterKey) == entry.installationID.rawValue {
-                UserDefaults.standard.removeObject(forKey: Self.activeCharacterKey)
+            if defaults.string(forKey: Self.activeCharacterKey) == entry.installationID.rawValue {
+                defaults.removeObject(forKey: Self.activeCharacterKey)
             }
             guard isCurrent(generation) else { return }
             await refreshInstalledCharacters(ifCurrent: generation)

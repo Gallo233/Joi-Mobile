@@ -210,6 +210,51 @@ class ContractArtifactTests(unittest.TestCase):
                 problems.append(f"{entry['id']}: is absent but cites evidence")
         self.assertEqual(problems, [], f"failure-state corpus problems: {problems}")
 
+    def test_permission_requests_stay_out_of_the_launch_path(self) -> None:
+        """`JM-P0-002`: nothing asks for a permission on the way to the stage.
+
+        The property holds by construction, which is precisely why it needs a
+        guard: it regresses one convenient `requestAuthorization()` at a time,
+        and a reviewer reading a diff that adds one has no reason to think about
+        first run. Each API is pinned to the single file that owns it, and the
+        files on the launch path may not mention any of them.
+        """
+        owners = {
+            "requestWhenInUseAuthorization": "JoiMobile/App/WalkLocationProvider.swift",
+            "requestAlwaysAuthorization": None,  # never, anywhere: foreground-only
+            "SFSpeechRecognizer.requestAuthorization": "JoiMobile/App/VoiceInput.swift",
+            "requestRecordPermission": "JoiMobile/App/VoiceInput.swift",
+            "AVCaptureDevice.requestAccess": None,
+            "PHPhotoLibrary.requestAuthorization": None,
+        }
+        sources = sorted((ROOT / "JoiMobile/App").glob("*.swift"))
+        self.assertGreater(len(sources), 5)
+
+        problems: list[str] = []
+        for api, owner in owners.items():
+            for path in sources:
+                if api not in path.read_text(encoding="utf-8"):
+                    continue
+                relative = str(path.relative_to(ROOT))
+                if owner is None:
+                    problems.append(f"{api} must not appear at all, found in {relative}")
+                elif relative != owner:
+                    problems.append(f"{api} belongs to {owner}, found in {relative}")
+
+        # The launch path itself: constructing the app and showing the shell.
+        launch = [
+            "JoiMobile/App/JoiMobileApp.swift",
+            "JoiMobile/App/RootShellView.swift",
+            "JoiMobile/App/WelcomeView.swift",
+        ]
+        for name in launch:
+            source = read(ROOT / name)
+            for api in owners:
+                if api in source:
+                    problems.append(f"{name} is on the launch path and mentions {api}")
+
+        self.assertEqual(problems, [], f"permission requests escaped their owners: {problems}")
+
     def test_all_json_contracts_and_fixtures_parse(self) -> None:
         files = sorted(CONTRACTS.rglob("*.json"))
         self.assertGreaterEqual(len(files), 7)
@@ -264,6 +309,8 @@ class ContractArtifactTests(unittest.TestCase):
             "JoiMobile/App/MemoryProposal.swift",
             # G2-J3C source projection copy.
             "JoiMobile/App/SourceViews.swift",
+            # G2-J5A first-run welcome.
+            "JoiMobile/App/WelcomeView.swift",
         ]
         missing: list[str] = []
         for name in surface:

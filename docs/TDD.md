@@ -659,6 +659,42 @@ publisher authenticity, so no pack can yet be attributed to anyone — the same 
 DEC-010 records for character packages. Downloading packs is also out of scope:
 this imports a pack the user already has.
 
+### 6.16 G2-J5A — First run is local, and stays that way
+
+`G2-J5A` closes `JM-P0-002`. Its substance has been true since G1 by
+construction — the app launches into Chat with a bundled character, a message
+can be sent immediately, there is no account, and the two permission requests in
+the codebase both sit inside the action that needs them. Nothing had ever
+checked any of that, which is the shape of property that regresses silently, one
+convenient `requestAuthorization()` at a time.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J5A-01` | Launching and restoring requests no permission: location stays `idle` and the microphone never opens | App / `AppModel`, `RootShellView` | `FirstRunTests` |
+| `J5A-02` | A bundled character is present and a text turn completes without an account or any grant — PRD §3.2's own definition of first run being complete | App / `AppModel.runChatTurn` | `FirstRunTests` |
+| `J5A-03` | Each permission API is pinned to the one file that owns it, and the launch-path files may not mention any of them. `requestAlwaysAuthorization`, camera and photo APIs may not appear anywhere | Tests / `test_contracts.py` | permission-boundary guard; negative control |
+| `J5A-04` | The welcome explains local-first storage, what durable memory means, and that permissions are just-in-time | App / `WelcomeView` | copy review |
+| `J5A-05` | The welcome is an overlay, not a gate: the app is usable without dismissing it, and dismissing without reading is remembered exactly as reading is | App / `AppModel.isWelcomePresented`, `completeWelcome` | not-a-gate tests |
+| `J5A-06` | All visible welcome copy lives in the editable `zh-Hans` catalog | App / `Localizable.xcstrings` | surface-copy guard |
+
+The guard in `J5A-03` is the load-bearing part. A reviewer reading a diff that
+adds a permission request has no particular reason to think about first run, so
+the property is pinned where a diff cannot quietly move it: an API outside its
+owning file, or any of them on the launch path, fails the suite. A negative
+control confirms it — adding `requestWhenInUseAuthorization` to `RootShellView`
+produces two named failures.
+
+`AppModel` now takes its `UserDefaults`, so this suite reads and writes its own
+store rather than the workstation's. That also removed the last three direct
+`UserDefaults.standard` uses, which had meant a test could write the
+active-character pointer to one store and read it from another.
+
+PRD §3.2's remaining steps are deliberately not built as screens. Character
+choice already has the Character Library, Chat introduction is the stage itself,
+and Map introduction is the Map surface — adding pages in front of them would be
+onboarding for its own sake, and §3.2 defines first run as complete once a
+character is visible and a message can be sent.
+
 ## 7. Map, navigation and offline PoC
 
 - Wrap MapLibre Native in `MapSurfaceProvider`; it renders online styles and verified downloaded corridor resources but never owns route truth.
@@ -795,7 +831,7 @@ The first slice is complete when traceability, XcodeGen generation, generic simu
 | ID | Requirement | Module | Interface / contract | Test evidence | Release gate |
 |---|---|---|---|---|---|
 | JM-P0-001 | Two-surface shell | App, CompanionCore | `CompanionSessionStore`, `PrimarySurface` | `StateOwnerTests`, `AppModelTests` surface cases | G1/G2 |
-| JM-P0-002 | Local-first first run | App, CharacterRuntime | `AppContainer`, package importer | **not implemented** — no first-run flow exists | G2 |
+| JM-P0-002 | Local-first first run | App, CharacterRuntime | `AppModel`, `WelcomeView`, package importer | `FirstRunTests`, `ContractArtifactTests` permission-boundary guard | G2 |
 | JM-P0-003 | Full Chat stage | ChatFeature, CharacterRuntime, App | `ChatGateway`, `ChatTurnProjection`, `CharacterRenderer` | `ChatTurnProjectionTests`, `AppModelTests` chat turn cases | G2/G4 |
 | JM-P0-004 | Official AI boundary | ChatFeature, Backend | OpenAPI `/v1/chat/streams`, `SSEChatGateway`, `ChatBackendEndpoint` | `SSEChatGatewayTests`, `MockBackendIntegrationTests`, secret scan | G1/G3 |
 | JM-P0-005 | Layered local memory | CompanionCore, App, SyncClient | `MemoryRepository`, `MemoryProposalV1`, `MemoryRecordV1` | `MemoryProposalTests`, `StateOwnerTests` location case | G3 |
