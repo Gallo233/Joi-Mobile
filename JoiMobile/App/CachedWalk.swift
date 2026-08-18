@@ -16,14 +16,22 @@ struct CachedWalk {
     /// Built once, because the engine validates the route: a `CachedWalk` cannot
     /// exist for a route that is not cached or has too few usable coordinates.
     let engine: RouteProgressEngine
+    /// The ordered story this route tells (`G2-J4B`).
+    let narrative: RouteNarrative
 
-    init(route: AcceptedNavigationRoute, title: String, arrivalNote: String) throws {
+    init(
+        route: AcceptedNavigationRoute,
+        title: String,
+        arrivalNote: String,
+        stops: [RouteStop]
+    ) throws {
         self.route = route
         self.title = title
         self.arrivalNote = arrivalNote
         // Thresholds are the engine's own defaults: departure and arrival are its
         // decision, not something the view re-invents.
         engine = try RouteProgressEngine(route: route, configuration: RouteProgressConfiguration())
+        narrative = try RouteNarrative(engine: engine, stops: stops)
     }
 
     /// A short demonstration walk, bundled rather than downloaded.
@@ -51,7 +59,35 @@ struct CachedWalk {
             cached: true
         ),
         title: String(localized: "示例：外滩滨江步行"),
-        arrivalNote: String(localized: "到了。这段路就走到这里。")
+        arrivalNote: String(localized: "到了。这段路就走到这里。"),
+        // Mostly the character's own words. A bundled sample is not a
+        // rights-cleared travel pack, so it makes almost no factual claims — and
+        // the one that it does carries a repository-authored fixture revision
+        // that names itself as such, rather than borrowing someone's research.
+        stops: [
+            RouteStop(
+                stopID: "sample.riverside.start",
+                name: String(localized: "起点：江边台阶"),
+                coordinate: GeoCoordinate(latitude: 31.2304, longitude: 121.4737),
+                narration: String(localized: "从这里开始。风是从水面上来的，走两步就习惯了。"),
+                suggestedDurationSeconds: 120
+            ),
+            RouteStop(
+                stopID: "sample.riverside.embankment",
+                name: String(localized: "堤岸"),
+                coordinate: GeoCoordinate(latitude: 31.2325, longitude: 121.4761),
+                narration: String(localized: "这段堤岸是二十世纪初修的，示例资料如此记载。"),
+                sourceRevisionIDs: ["fixture://sources/bund-history@2026-08-18"],
+                suggestedDurationSeconds: 180
+            ),
+            RouteStop(
+                stopID: "sample.riverside.end",
+                name: String(localized: "终点：转角"),
+                coordinate: GeoCoordinate(latitude: 31.2351, longitude: 121.4776),
+                narration: String(localized: "走到这个转角，江面一下子就宽了。我喜欢在这里停一会儿。"),
+                suggestedDurationSeconds: 120
+            ),
+        ]
     )
 
     /// Route coordinates projected into a unit square for drawing, preserving

@@ -42,15 +42,40 @@ struct MemoryProposal: Equatable, Sendable, Identifiable {
         at now: Date,
         proposalID: String = UUID().uuidString.lowercased()
     ) {
-        proposal = MemoryProposalV1(
-            proposalID: proposalID,
-            category: .relationship,
+        self.init(
             value: entry.text,
             reason: String(localized: "来自你与角色的一次对话"),
+            category: .relationship,
+            sourceEventID: entry.eventID,
+            characterID: characterID,
+            threadID: threadID,
+            at: now,
+            proposalID: proposalID
+        )
+    }
+
+    /// The general form. Used directly by the trip recap (`G2-J4B`), where what
+    /// is being proposed came from a stop the user walked past rather than from
+    /// a line the character said.
+    init(
+        value: String,
+        reason: String,
+        category: MemoryCategory,
+        sourceEventID: String = "",
+        characterID: String,
+        threadID: String,
+        at now: Date,
+        proposalID: String = UUID().uuidString.lowercased()
+    ) {
+        proposal = MemoryProposalV1(
+            proposalID: proposalID,
+            category: category,
+            value: value,
+            reason: reason,
             state: .proposed,
             expiresAt: now.addingTimeInterval(Self.lifetime)
         )
-        sourceEventID = entry.eventID
+        self.sourceEventID = sourceEventID
         self.characterID = characterID
         self.threadID = threadID
     }

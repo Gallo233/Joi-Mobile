@@ -6,6 +6,12 @@ public enum OfflinePackError: Error, Equatable, Sendable {
     case missingRights
     case missingRoute
     case expired
+    /// A tour with nothing to stop at. Distinct from `missingRoute`: the line
+    /// exists, the story does not.
+    case noStops
+    /// A declared stop does not project onto the route it belongs to. A tour
+    /// missing one of its stops is a broken pack, not a shorter tour.
+    case stopOffRoute(String)
 }
 
 public struct OfflinePackVerifier: Sendable {

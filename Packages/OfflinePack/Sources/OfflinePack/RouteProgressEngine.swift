@@ -168,6 +168,18 @@ public struct RouteProgressEngine: Sendable {
         )
     }
 
+    /// Where a fixed point sits along this route, as a fraction of its length.
+    ///
+    /// Stops are authored as coordinates, not as fractions: a fraction would go
+    /// silently wrong the moment the route geometry changed, and the route is
+    /// the thing that decides where its own stops fall.
+    public func progressAlong(_ coordinate: GeoCoordinate) -> Double? {
+        guard Self.isValid(coordinate), let projection = nearestProjection(to: coordinate) else {
+            return nil
+        }
+        return min(1, max(0, projection.distanceAlongRouteMeters / totalDistanceMeters))
+    }
+
     private func nearestProjection(to location: GeoCoordinate) -> Projection? {
         var best: Projection?
 

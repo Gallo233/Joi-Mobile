@@ -1,4 +1,5 @@
 import CompanionCore
+import OfflinePack
 import SwiftUI
 
 /// The Map surface: one cached cultural walk, how far along it you are, and the
@@ -43,6 +44,12 @@ struct MapExperienceView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
+                // The story, not just the line: where you are, what it says,
+                // and what is next (`G2-J4B`).
+                if model.isWalking {
+                    RouteStoryStrip(state: model.narrativeState)
+                }
+
                 if let guidance = model.walkGuidance {
                     Label(guidance, systemImage: model.walkObservation?.arrived == true
                         ? "flag.checkered"
@@ -63,6 +70,13 @@ struct MapExperienceView: View {
                 HStack {
                     Label(characterName, systemImage: "sparkles")
                     Spacer()
+                    if !model.walkRecap.isEmpty {
+                        Button(String(localized: "行程回顾"), systemImage: "list.bullet.rectangle") {
+                            model.isRecapPresented = true
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.teal)
+                    }
                     if model.canOfferJourneyAttachment {
                         // Hands this walk to the conversation for one turn. It
                         // opens a preview in Chat; nothing is sent from here.
@@ -84,6 +98,12 @@ struct MapExperienceView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 82)
             .accessibilityElement(children: .contain)
+        }
+        .sheet(isPresented: Binding(
+            get: { model.isRecapPresented },
+            set: { if !$0 { model.isRecapPresented = false } }
+        )) {
+            RouteRecapView(model: model)
         }
     }
 
@@ -168,6 +188,128 @@ private struct RouteCorridor: View {
                         with: .color(.white.opacity(0.85)),
                         lineWidth: 2
                     )
+                }
+            }
+        }
+    }
+}
+
+/// Where the walk has got to in the story: the stop you are at, what it says,
+/// and what comes next.
+private struct RouteStoryStrip: View {
+    let state: RouteNarrativeState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                ForEach(state.stops, id: \.stop.stopID) { entry in
+                    Circle()
+                        .fill(entry.completion == .completed ? Color.teal : Color.secondary.opacity(0.3))
+                        .frame(width: 8, height: 8)
+                }
+                Text("已到 \(state.completedCount)/\(state.stops.count) 站")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let current = state.currentStop {
+                Text(current.name)
+                    .font(.subheadline.weight(.semibold))
+                Text(current.narration)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !current.isFactual {
+                    // Said out loud, because the recap makes the same
+                    // distinction and the walk should not blur it first.
+                    Text("这是角色的感想，不是有来源的说法。")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let next = state.nextStop {
+                Label(String(localized: "下一站：\(next.name)"), systemImage: "arrow.forward.circle")
+                    .font(.caption)
+                    .foregroundStyle(.teal)
+            } else {
+                Label(String(localized: "所有站点都走完了"), systemImage: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.teal)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The trip recap, built locally from the stops actually reached.
+///
+/// Facts and the character's reflections are shown in separate sections, and
+/// only a fact may be kept: `JM-P0-012` asks for a recap that distinguishes the
+/// two, and putting the model's passing remark into durable memory wearing the
+/// clothes of something learned is exactly what that distinction prevents.
+struct RouteRecapView: View {
+    @Bindable var model: AppModel
+
+    private var facts: [RecapEntry] { model.walkRecap.filter(\.isFact) }
+    private var reflections: [RecapEntry] { model.walkRecap.filter { !$0.isFact } }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if !facts.isEmpty {
+                    Section {
+                        ForEach(facts, id: \.stopID) { entry in
+                            if case let .fact(_, name, text, revisions) = entry {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(name).font(.caption.weight(.semibold))
+                                    Text(text).font(.callout)
+                                    ForEach(revisions, id: \.self) { revision in
+                                        Text(revision)
+                                            .font(.caption2.monospaced())
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Button(String(localized: "记住这条")) {
+                                        Task { await model.proposeMemory(from: entry) }
+                                    }
+                                    .font(.caption.weight(.medium))
+                                    .buttonStyle(.plain)
+                                    .foregroundStyle(.indigo)
+                                }
+                                .padding(.vertical, 2)
+                            }
+                        }
+                    } header: {
+                        Text("有来源的部分")
+                    } footer: {
+                        Text("每条都附有资料版本，可以单独保存到记忆。")
+                    }
+                }
+
+                if !reflections.isEmpty {
+                    Section {
+                        ForEach(reflections, id: \.stopID) { entry in
+                            if case let .reflection(_, name, text) = entry {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(name).font(.caption.weight(.semibold))
+                                    Text(text).font(.callout).foregroundStyle(.secondary)
+                                }
+                                .padding(.vertical, 2)
+                            }
+                        }
+                    } header: {
+                        Text("角色的感想")
+                    } footer: {
+                        Text("这些是角色自己的话，没有资料支持，也不会保存为记忆。")
+                    }
+                }
+            }
+            .navigationTitle(String(localized: "行程回顾"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(String(localized: "完成")) { model.isRecapPresented = false }
                 }
             }
         }

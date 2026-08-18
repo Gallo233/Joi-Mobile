@@ -103,7 +103,19 @@ final class AppModel {
     let walk = CachedWalk.sample
     private(set) var walkObservation: CachedRouteProgressObservation?
     private(set) var isWalking = false
-    @ObservationIgnored private var walkSession: NavigationSessionID?
+    /// Internal rather than private so a test can feed a reading through the
+    /// real `advanceWalk` path with the real session, instead of the app
+    /// growing a method that exists only for tests.
+    @ObservationIgnored private(set) var walkSession: NavigationSessionID?
+
+    /// The furthest point of the route reached on this walk (`G2-J4B`).
+    ///
+    /// Completion follows this, never the current position: doubling back to
+    /// look at something again must not un-visit the stops beyond it, and a
+    /// pause must not forget what was covered. `RouteNarrative` stays a pure
+    /// function by keeping this high-water mark out here.
+    private(set) var furthestWalkProgress: Double = 0
+    var isRecapPresented = false
 
     /// The journey fact the user has offered to the conversation but not yet
     /// sent (`G2-J3B`). It is the preview and the payload at once, so what is
@@ -233,6 +245,7 @@ final class AppModel {
         let session = NavigationSessionID()
         walkSession = session
         isWalking = true
+        furthestWalkProgress = 0
         Task { [journeyContext, walk] in await journeyContext.begin(route: walk.route, session: session) }
         walkLocation.start(
             onUpdate: { [weak self] observation in
@@ -287,16 +300,50 @@ final class AppModel {
     /// Feeds one reading through the route engine and lets the journey store
     /// decide whether it counts. A reading for a session that is no longer
     /// current is refused by the store, which is why the session travels with it.
-    private func advanceWalk(with location: LocationObservation, session: NavigationSessionID) {
+    func advanceWalk(with location: LocationObservation, session: NavigationSessionID) {
         guard isWalking, walkSession == session else { return }
         guard let observed = try? walk.engine.observe(location, session: session) else {
             // An unusable reading is not progress. The last good one stays.
             return
         }
         walkObservation = observed
+        furthestWalkProgress = max(furthestWalkProgress, observed.navigationObservation.candidateProgress)
         Task { [journeyContext] in
             await journeyContext.reduce(observed.navigationObservation)
         }
+    }
+
+    /// Where the walk has got to in the story it is telling.
+    var narrativeState: RouteNarrativeState {
+        walk.narrative.state(
+            currentProgress: walkProgress,
+            furthestProgress: furthestWalkProgress
+        )
+    }
+
+    /// The trip recap, built locally from the stops actually reached.
+    var walkRecap: [RecapEntry] { walk.narrative.recap(furthestProgress: furthestWalkProgress) }
+
+    /// A recap fact may be kept; a reflection may not.
+    ///
+    /// PRD Journey 6 offers to save selected recap *facts*. The character's
+    /// passing remark about the wind is not a fact about the trip, and storing
+    /// it as one would put the model's voice into durable memory wearing the
+    /// clothes of something the user learned.
+    func proposeMemory(from entry: RecapEntry, now: Date = Date()) async {
+        guard case let .fact(_, name, text, _) = entry else { return }
+        let snapshot = await companionSession.current()
+        let proposal = MemoryProposal(
+            value: text,
+            reason: String(localized: "来自「\(name)」这一站"),
+            category: .travelRecap,
+            characterID: snapshot.selection.characterID,
+            threadID: snapshot.threadID,
+            at: now
+        )
+        memoryProposal = proposal
+        memoryDraft = proposal.proposal.value
+        memoryCategory = proposal.proposal.category
     }
 
     /// Progress along the cached route, 0…1.

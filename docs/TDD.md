@@ -587,6 +587,42 @@ unavailability once, and the App ends the walk and drops the snapshot. It
 deliberately does not call `stop()`, which would reset availability to `.idle`
 and erase the message explaining why the walk ended.
 
+### 6.14 G2-J4B — The walk as a story
+
+`G2-J4B` gives `JM-P0-012` an implementation. `RouteProgressEngine` could say
+how far along a line the walker was; no type anywhere knew the line had stops,
+an order, a next one, or anything to say on arrival. Routes-as-narrative was the
+last of Map's four pillars with nothing behind it.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J4B-01` | Stops are ordered by the route rather than by the order a pack listed them, and a stop that does not project onto its route is refused — a tour missing a stop is a broken pack, not a shorter tour | OfflinePack / `RouteNarrative.init`, `RouteProgressEngine.progressAlong` | `RouteNarrativeTests` |
+| `J4B-02` | Completion state, the next stop and remaining suggested duration all follow from progress; a finished walk has no next stop and no time left to suggest | OfflinePack / `RouteNarrative.state` | ordering and pacing tests |
+| `J4B-03` | Completion follows the furthest point reached, never the current one: doubling back does not un-visit the stops beyond, and a paused walk resumes with what it covered | OfflinePack + App / `RouteNarrative.state`, `AppModel.furthestWalkProgress` | double-back, pause/resume and high-water-mark tests |
+| `J4B-04` | The recap covers stops actually reached, not the pack's contents | OfflinePack / `RouteNarrative.recap` | recap-scope test |
+| `J4B-05` | The recap keeps sourced facts apart from the character's reflective language, as two cases rather than one case with a flag — a reflection has nowhere to put a source revision and a fact cannot exist without one | OfflinePack / `RecapEntry` | recap-separation tests |
+| `J4B-06` | A sourced recap fact may be kept, and arrives as a `travelRecap` proposal that still has to be accepted; a reflection cannot be kept at all | App / `AppModel.proposeMemory(from:)` | `RouteStoryTests` |
+| `J4B-07` | The bundled sample makes almost no factual claims, and the one it does carries a revision that announces itself as a repository fixture | App / `CachedWalk.sample` | sample-honesty test |
+| `J4B-08` | All visible narrative copy lives in the editable `zh-Hans` catalog | App / `Localizable.xcstrings` | surface-copy guard |
+
+Two cases rather than a boolean is the whole design of `RecapEntry`. A
+`sourced: Bool` next to an optional revision list would let "a fact with no
+source" and "a reflection carrying a citation" both be constructed, and the rule
+would then live in whichever reader remembered to check. As two cases, neither
+is representable.
+
+Completion is a high-water mark held by the App, not by `RouteNarrative`, which
+stays a pure function of the two progress values. That is what makes pause and
+resume free: there is no session state to lose, because the walk's history is one
+number.
+
+This slice does **not** implement travel-pack import, so `FAIL-025` and
+`FAIL-026` are unchanged and `JM-P0-014` remains partial: the bundled sample is a
+sample, not a downloaded pack with a rights receipt. Route-narration **speech**
+is also deliberately absent — `SpeechPriority.placeNarration` still has no
+producer, because speaking a stop needs the voice pipeline and device audio
+evidence (G4) rather than one more call site.
+
 ## 7. Map, navigation and offline PoC
 
 - Wrap MapLibre Native in `MapSurfaceProvider`; it renders online styles and verified downloaded corridor resources but never owns route truth.
@@ -733,7 +769,7 @@ The first slice is complete when traceability, XcodeGen generation, generic simu
 | JM-P0-009 | Arrive-and-tell | MapFeature | place resolver, `JourneyContextSnapshot` | **not implemented** — no place resolver exists; GPS field script remains G4 | G2/G4 |
 | JM-P0-010 | See-and-ask | MapFeature, Backend | vision upload contract | **not implemented** — no capture or recognition path exists | G3/G4 |
 | JM-P0-011 | Cultural walking navigation | MapFeature, Backend | `NavigationProvider`, route API | `RouteProgressEngineTests`, `CachedWalkTests`; **no Ferrostar integration**, outdoor walk remains G4 | G2/G4 |
-| JM-P0-012 | Routes-as-narrative | MapFeature, OfflinePack | `TravelPackManifestV1`, narrative state | **not implemented** — no stops, pacing or recap exist | G2 |
+| JM-P0-012 | Routes-as-narrative | OfflinePack, App | `RouteStop`, `RouteNarrative`, `RecapEntry` | `RouteNarrativeTests`, `RouteStoryTests` | G2 |
 | JM-P0-013 | Trusted sources | CompanionCore, MapFeature, App | `SourceProjectionV1`, `SourceEligibility`, `ClaimSupport` | `SourceEligibilityTests`, `SourceProjectionTests`; **partial** — no backend produces sources yet | G2/G3 |
 | JM-P0-014 | Offline travel pack | OfflinePack, MapFeature | `TravelPackManifestV1`, cached navigation | `OfflinePackVerifierTests`, `RouteProgressEngineTests`; **no pack import**, flight-mode walk remains G4 | G2/G4/G5 |
 | JM-P0-015 | Character library/import | CharacterRuntime, App | `CharacterPackageManifestV1`, `CharacterMotionV1` | `CharacterPackageInstallerTests`, `CharacterPackageValidatorTests` | G2/G3/G5 |
