@@ -283,3 +283,70 @@ private actor HeldGateway: ChatGateway {
         }
     }
 }
+
+/// `G2-J5C` — `FAIL-024 networkDegraded` at the App boundary.
+@MainActor
+final class NetworkDegradedTests: XCTestCase {
+    /// A stalled turn ends as a distinct, retryable state — not as an
+    /// unavailable service, and not left pending.
+    func testAStalledTurnEndsAsADegradedNetworkRatherThanAnOutage() async throws {
+        let model = AppModel(chatGateway: SilentGateway(), stallTimeout: .milliseconds(80))
+        try await Self.runBounded(model, text: "在吗？")
+
+        guard case let .failed(message, retryable) = model.chatTurnState else {
+            return XCTFail("a stalled turn must not stay pending: \(model.chatTurnState)")
+        }
+        XCTAssertTrue(retryable, "nothing was accepted, so resending is safe")
+        XCTAssertTrue(message.contains("网络太慢"), message)
+        XCTAssertNotEqual(
+            message,
+            "服务暂时无法回应，请稍后再试。",
+            "a slow connection is not an unavailable service"
+        )
+    }
+
+    /// "Keep cached/accepted state" — a timeout costs the turn, not the
+    /// conversation, and it says what still works with no network.
+    func testATimeoutKeepsTheTranscriptAndNamesWhatStillWorksOffline() async throws {
+        let model = AppModel(chatGateway: SilentGateway(), stallTimeout: .milliseconds(80))
+        try await Self.runBounded(model, text: "第一句")
+        let before = model.chatTranscript
+
+        try await Self.runBounded(model, text: "第二句")
+
+        XCTAssertEqual(model.chatTranscript, before, "accepted state survives a timeout")
+        guard case let .failed(message, _) = model.chatTurnState else {
+            return XCTFail("expected a failure state")
+        }
+        XCTAssertTrue(message.contains("缓存路线"), "the offline alternative is named: \(message)")
+        // The cached walk is exactly that alternative, and needs no network.
+        XCTAssertTrue(model.walk.route.cached)
+    }
+}
+
+private extension NetworkDegradedTests {
+    /// Runs a turn without ever awaiting it, and waits a bounded time for it to
+    /// settle.
+    ///
+    /// A stalled turn sits inside an unstructured task that the caller cannot
+    /// cancel, so `await model.runChatTurn(...)` would hang the entire app suite
+    /// on exactly the failure these tests exist to report. Watching the state
+    /// instead turns that into a named failure in five seconds.
+    static func runBounded(_ model: AppModel, text: String) async throws {
+        let turn = Task { await model.runChatTurn(text: text) }
+        defer { turn.cancel() }
+        for _ in 0..<500 {
+            if case .failed = model.chatTurnState { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("the turn never settled; the stall watchdog is not running")
+    }
+}
+
+/// Accepts the request and then says nothing at all, like a connection that
+/// dropped without closing.
+private struct SilentGateway: ChatGateway {
+    func stream(_ request: ChatRequest) -> AsyncThrowingStream<CompanionEventV1, Error> {
+        AsyncThrowingStream { _ in }
+    }
+}

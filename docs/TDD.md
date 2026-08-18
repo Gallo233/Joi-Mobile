@@ -729,6 +729,39 @@ taxonomy the Kotlin core mirrors and the conformance vectors cover — a decisio
 worth making on its own rather than as a side effect. Export does not exist at
 all (`JM-P0-023`).
 
+### 6.18 G2-J5C — A turn that goes quiet ends
+
+`FAIL-024 networkDegraded` asks that a timed-out operation is cancelled or
+superseded while cached and accepted state is kept. `ChatSessionController.send`
+awaited its gateway with no bound on silence, so a connection that died
+mid-stream left the composer pending until the user noticed.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J5C-01` | A turn that produces nothing for longer than the stall timeout is cancelled and reported as `timedOut`, rather than awaited indefinitely | ChatFeature / `ChatSessionController`, `StallWatch` | `ChatStallTimeoutTests` |
+| `J5C-02` | The bound is on silence, not on duration: a slow but live stream completes however long it takes, because every event resets the watch | ChatFeature / `StallWatch.tick` | slow-stream test |
+| `J5C-03` | A user stop is not reported as a timeout. Both arrive as cancellation, and only the watchdog knows which | ChatFeature / `StallWatch.didStall` | user-stop test |
+| `J5C-04` | A timeout costs the turn, not the conversation: the accepted transcript survives and the state is retryable | App / `AppModel.chatFailure` | `NetworkDegradedTests` |
+| `J5C-05` | A slow connection reads differently from an unavailable service, and names the cached walk as what still works with no network | App / `Localizable.xcstrings` | degraded-copy test |
+
+Progress is counted, not timestamped: the watch asks "did anything happen while
+I slept", which needs no clock and cannot drift.
+
+**Two testing lessons are recorded here because both cost real time.** A generic
+`Result<T, Error>?` task group sent the type checker into an inference long
+enough to read as a hung test run rather than the slow compile it was; the
+deadline is concretely typed now. And a stalled turn sits inside an
+*unstructured* task, so cancelling the caller cannot reach it and
+`withTaskGroup` — which always awaits its children — hangs on precisely the
+failure the test exists to report. Both suites poll a box the turn writes into
+and never await the stuck task, so removing the watchdog now fails in seconds
+with a named message instead of hanging the run.
+
+`FAIL-024` stays **partial**. What is missing is reachability itself: nothing
+observes the connection, so the app cannot enter a degraded mode *before* a turn
+stalls, and Chat has no cached answer to fall back to — the cached walk is the
+only offline content this product has, and it is on the other surface.
+
 ## 7. Map, navigation and offline PoC
 
 - Wrap MapLibre Native in `MapSurfaceProvider`; it renders online styles and verified downloaded corridor resources but never owns route truth.

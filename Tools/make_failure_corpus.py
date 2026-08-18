@@ -102,9 +102,12 @@ STATUS: dict[str, tuple[str, str, list[str], str]] = {
     "FAIL-024": (
         "partial",
         "ChatFeature, App",
-        ["ChatSessionControllerTests"],
-        "Transport failure and cancellation are typed and preserve accepted state, but there is "
-        "no distinct degraded-network mode and no cached-versus-online presentation.",
+        ["ChatSessionControllerTests", "ChatStallTimeoutTests", "NetworkDegradedTests"],
+        "A turn that goes silent is now timed out and cancelled rather than left open, reported "
+        "as its own retryable state distinct from an unavailable service, and it names the "
+        "cached walk as what still works without a network. What is missing is reachability "
+        "itself: nothing observes the connection, so the app cannot enter a degraded mode "
+        "before a turn stalls, and there is no cached answer for Chat to fall back to.",
     ),
     "FAIL-025": (
         "implemented",

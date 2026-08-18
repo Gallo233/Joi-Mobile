@@ -187,6 +187,7 @@ final class AppModel {
         chatGateway: (any ChatGateway)? = nil,
         memoryStore: (any MemoryRepository)? = nil,
         defaults: UserDefaults = .standard,
+        stallTimeout: Duration = ChatSessionController.defaultStallTimeout,
         initialSelection: CharacterSelection = CharacterSelection(characterID: "joi.starter", displayName: "Joi"),
         threadID: String = "thread.local",
         sessionID: String = "session.local"
@@ -201,7 +202,8 @@ final class AppModel {
         // refuses any non-loopback plain-HTTP host.
         let endpoint = ChatBackendEndpoint.localMock()
         self.chatController = ChatSessionController(
-            gateway: chatGateway ?? SSEChatGateway(endpoint: endpoint)
+            gateway: chatGateway ?? SSEChatGateway(endpoint: endpoint),
+            stallTimeout: stallTimeout
         )
         self.speechPlayer = SpeechPlayer(
             endpoint: endpoint.baseURL.appendingPathComponent("v1/speech")
@@ -888,8 +890,19 @@ final class AppModel {
             }
             return .failed(message: message, retryable: transport.isRetryable)
         }
-        if error is ChatSessionError {
-            return .failed(message: String(localized: "收到了不属于这次对话的回应，已丢弃。"), retryable: true)
+        if let session = error as? ChatSessionError {
+            switch session {
+            case .foreignEvent:
+                return .failed(message: String(localized: "收到了不属于这次对话的回应，已丢弃。"), retryable: true)
+            case .timedOut:
+                // `FAIL-024`: a degraded connection is not an unavailable
+                // service, and saying so matters — retrying is worth a try, and
+                // the cached walk works with no network at all.
+                return .failed(
+                    message: String(localized: "网络太慢，这次回应没有等到；已保留对话。可以重试，地图上的缓存路线不需要联网。"),
+                    retryable: true
+                )
+            }
         }
         return .failed(message: String(localized: "无法连接到 Joi 的服务；对话没有变化。"), retryable: true)
     }
