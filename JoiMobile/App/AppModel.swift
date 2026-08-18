@@ -234,9 +234,36 @@ final class AppModel {
         walkSession = session
         isWalking = true
         Task { [journeyContext, walk] in await journeyContext.begin(route: walk.route, session: session) }
-        walkLocation.start { [weak self] observation in
-            self?.advanceWalk(with: observation, session: session)
-        }
+        walkLocation.start(
+            onUpdate: { [weak self] observation in
+                self?.advanceWalk(with: observation, session: session)
+            },
+            onUnavailable: { [weak self] in
+                self?.endWalkWithoutLocation()
+            }
+        )
+    }
+
+    /// `FAIL-015`/`FAIL-016`: the walk cannot be followed, so it ends and the
+    /// journey owner drops its snapshot.
+    ///
+    /// The defect this closes: `startWalk` begins a journey before the system has
+    /// answered about permission, because the walk has to exist for a reading to
+    /// be reduced into. When the answer was "no", nothing undid that — the walk
+    /// stayed nominally in progress, `JourneyContextStore` kept a snapshot for a
+    /// route nothing was tracking, and Map still offered to carry that context
+    /// into the conversation. The declared semantics say the pending snapshot is
+    /// cleared, so it is.
+    ///
+    /// `walkLocation.stop()` is deliberately not called: it resets availability
+    /// to `.idle` and would erase the message explaining why the walk ended.
+    func endWalkWithoutLocation() {
+        guard isWalking else { return }
+        isWalking = false
+        walkSession = nil
+        walkObservation = nil
+        pendingJourneyAttachment = nil
+        Task { [journeyContext] in await journeyContext.clear() }
     }
 
     /// Ends the walk and drops the journey context. Stopping is complete: the

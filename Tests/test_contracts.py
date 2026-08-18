@@ -157,6 +157,59 @@ class ContractArtifactTests(unittest.TestCase):
         for row in rows:
             self.assertTrue(row[4], f"{row[0]} has an empty evidence cell")
 
+    def test_failure_state_corpus_matches_the_prd_exactly(self) -> None:
+        """`FAIL-001`…`FAIL-032` must stay the states the PRD actually names.
+
+        The corpus is generated from PRD §7.1 rather than retyped, so this guards
+        the direction that generation cannot: a PRD edit that renames, reorders
+        or adds a state leaves a stale committed corpus behind until someone
+        re-runs the tool.
+        """
+        prd = read(ROOT / "docs/PRD.md")
+        states_section = prd[prd.index("## 7. Named failure and degraded states") : prd.index("### 7.1")]
+        fixture_section = prd[prd.index("### 7.1") : prd.index("## 8.")]
+        declared = re.findall(r"^\| `([a-zA-Z]+)` \|", states_section, re.MULTILINE)
+        fixtures = re.findall(r"^\| `([a-zA-Z]+)` \| `(FAIL-\d{3})` \|", fixture_section, re.MULTILINE)
+
+        self.assertEqual(len(declared), 32)
+        self.assertEqual(declared, [state for state, _ in fixtures], "§7 and §7.1 name different states")
+        self.assertEqual(
+            [fixture for _, fixture in fixtures],
+            [f"FAIL-{index:03d}" for index in range(1, 33)],
+            "fixture IDs must be unique and contiguous",
+        )
+
+        corpus = json.loads(read(ROOT / "Contracts/failure-states.json"))
+        self.assertEqual(corpus["schema"], "joi.failure-states.v1")
+        self.assertEqual(
+            [(entry["id"], entry["state"]) for entry in corpus["states"]],
+            [(fixture, state) for state, fixture in fixtures],
+            "corpus is stale; re-run Tools/make_failure_corpus.py",
+        )
+
+    def test_failure_states_claim_only_evidence_that_exists(self) -> None:
+        """A state may not call itself implemented on the strength of a test nobody wrote.
+
+        This is the same failure the traceability table had: a plausible name
+        reads as coverage. Here it would be worse, because the corpus is what a
+        reader consults to learn which degraded paths are real.
+        """
+        corpus = json.loads(read(ROOT / "Contracts/failure-states.json"))
+        declared = declared_test_suites()
+        problems: list[str] = []
+        for entry in corpus["states"]:
+            self.assertIn(entry["status"], {"implemented", "partial", "absent"}, entry["id"])
+            for suite in entry["evidence"]:
+                if suite not in declared:
+                    problems.append(f"{entry['id']}: {suite} does not exist")
+            if entry["status"] == "implemented" and not entry["evidence"]:
+                problems.append(f"{entry['id']}: claims implemented with no evidence")
+            if entry["status"] != "implemented" and not entry.get("gap"):
+                problems.append(f"{entry['id']}: is {entry['status']} but names no gap")
+            if entry["status"] == "absent" and entry["evidence"]:
+                problems.append(f"{entry['id']}: is absent but cites evidence")
+        self.assertEqual(problems, [], f"failure-state corpus problems: {problems}")
+
     def test_all_json_contracts_and_fixtures_parse(self) -> None:
         files = sorted(CONTRACTS.rglob("*.json"))
         self.assertGreaterEqual(len(files), 7)

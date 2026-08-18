@@ -554,6 +554,39 @@ are proven by tests and fixtures, not by a live turn. This slice therefore moves
 withheld state and the projection exist and are enforced; a producer, place
 identity and cached-narration freshness do not.
 
+### 6.13 G2-J4A — The named failure states become executable
+
+PRD §7 names 32 degraded states and §7.1 gives each a `FAIL-NNN` fixture ID and
+an exact cancellation rule. `FAIL-001`…`FAIL-032` appeared nowhere else in the
+repository: the "32 failure fixtures" the Product Design scheme gate records as
+closing G0 rework were two tables in a document. `JM-P0-022` was traced to a
+`NamedFailureFixtureTests` that did not exist until the 2026-08-18 traceability
+reconciliation replaced it with an honest note.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J4A-01` | Every named state exists as a machine-readable entry carrying its fixture ID, its declared cancellation rule, its implementation status, its owner and its evidence | Contracts / `failure-states.json` | corpus-matches-PRD test |
+| `J4A-02` | The corpus is generated from the PRD, so its state list and cancellation text cannot drift from the requirement; a PRD edit that is not regenerated fails a test | Tools / `make_failure_corpus.py` | drift test |
+| `J4A-03` | A state may not claim `implemented` on the strength of a test nobody wrote, may not be `partial` or `absent` without naming its gap, and may not be `absent` while citing evidence | Tests / `test_contracts.py` | corpus-evidence test |
+| `J4A-04` | `FAIL-015`: a walk whose location is refused ends, its journey snapshot is cleared, and Chat is no longer offered a context that no longer exists — while the surface can still say why | App / `AppModel.endWalkWithoutLocation`, `WalkLocationProvider` | `FailureStateTests` |
+| `J4A-05` | `FAIL-002`: stopping an **in-flight** turn preserves the accepted transcript, rejects the turn's late terminal event, and retries under a new request ID | App / `AppModel.stopChatTurn` | `FailureStateTests` |
+| `J4A-06` | `FAIL-016`: an accuracy that is not a usable number is refused; the unimplemented half — an accuracy ceiling and a staleness window — is pinned by a test and named as a gap rather than silently absent | OfflinePack / `RouteProgressEngine.observe` | `FailureStateTests`, corpus `gap` |
+
+Current status across the 32: **14 implemented, 5 partial, 13 absent.** The
+absent ones are absent because their features do not exist — camera, photos,
+place identity, sync, accounts, travel-pack import, locale fallback — and the
+corpus says so in words rather than leaving a reader to infer it from silence.
+
+`FAIL-015` was a real defect, not a documentation gap. `startWalk` opens a
+journey in `JourneyContextStore` before the system has answered about
+permission, because a reading needs somewhere to be reduced into; nothing undid
+that when the answer was "no". The walk stayed nominally in progress, the owner
+kept a snapshot for a route nothing was tracking, and Map went on offering to
+carry that context into the conversation. `WalkLocationProvider` now reports
+unavailability once, and the App ends the walk and drops the snapshot. It
+deliberately does not call `stop()`, which would reset availability to `.idle`
+and erase the message explaining why the walk ended.
+
 ## 7. Map, navigation and offline PoC
 
 - Wrap MapLibre Native in `MapSurfaceProvider`; it renders online styles and verified downloaded corridor resources but never owns route truth.
@@ -710,7 +743,7 @@ The first slice is complete when traceability, XcodeGen generation, generic simu
 | JM-P0-019 | Optional category sync | SyncClient, Backend | `SyncGateway`, `MemorySyncRecordV1`, `CharacterPackageSyncRecordV1`, `LocationSyncAuthorizationV1` | `SyncConsentStoreTests`, `StateOwnerTests` location case; **no sync client or cursor/tombstone replay exists** | G3 |
 | JM-P0-020 | Editable Simplified-Chinese copy | App, all features, Backend | String Catalog, locale context and cache-key contract | `ContractArtifactTests` catalog and surface-copy cases | G1/G2 |
 | JM-P0-021 | Deferred experience hooks | App, all UI features | semantic labels, system text styles and motion-policy seams | shell hook smoke tests; full matrix deferred | G1 / later accessibility gate |
-| JM-P0-022 | Failure/recovery contract | all modules | typed error/state enums | `AppModelTests`, `ChatSessionControllerTests`, `JourneyAttachmentTests` expiry case; **no cross-module fixture corpus** | G2/G3 |
+| JM-P0-022 | Failure/recovery contract | all modules | typed error/state enums, `Contracts/failure-states.json` | `FailureStateTests`, `ContractArtifactTests` corpus cases, `AppModelTests`, `ChatSessionControllerTests`; **partial** — 14 of 32 states implemented, 5 partial, 13 absent | G2/G3 |
 | JM-P0-023 | Data-purpose governance | App, Backend, SyncClient | consent/media receipts, export and deletion request/status contracts | **partial** — local memory deletion is covered by `MemoryProposalTests`; no export, no server acknowledgement | G3/G6 |
 | JM-P0-024 | Privacy-safe quality metrics | App, Backend | analytics allowlist | **not implemented** — no analytics exist; `ProviderConfidentialityTests` covers only proxy redaction | G3/G6 |
 

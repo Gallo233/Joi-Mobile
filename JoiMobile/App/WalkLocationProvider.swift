@@ -30,6 +30,9 @@ final class WalkLocationProvider: NSObject, CLLocationManagerDelegate {
 
     @ObservationIgnored private let manager = CLLocationManager()
     @ObservationIgnored private var onUpdate: ((LocationObservation) -> Void)?
+    /// Told once when the walk can no longer be followed, so the journey owner
+    /// does not keep a snapshot for a walk nothing is tracking (`FAIL-015`).
+    @ObservationIgnored private var onUnavailable: (() -> Void)?
 
     override init() {
         super.init()
@@ -40,8 +43,12 @@ final class WalkLocationProvider: NSObject, CLLocationManagerDelegate {
         manager.distanceFilter = 5
     }
 
-    func start(onUpdate: @escaping (LocationObservation) -> Void) {
+    func start(
+        onUpdate: @escaping (LocationObservation) -> Void,
+        onUnavailable: @escaping () -> Void = {}
+    ) {
         self.onUpdate = onUpdate
+        self.onUnavailable = onUnavailable
         switch manager.authorizationStatus {
         case .notDetermined:
             availability = .waitingForPermission
@@ -49,22 +56,35 @@ final class WalkLocationProvider: NSObject, CLLocationManagerDelegate {
         case .authorizedWhenInUse, .authorizedAlways:
             beginUpdates()
         case .denied, .restricted:
-            availability = .denied
+            becomeUnavailable(.denied)
         @unknown default:
-            availability = .unavailable
+            becomeUnavailable(.unavailable)
         }
     }
 
     func stop() {
         manager.stopUpdatingLocation()
         onUpdate = nil
+        onUnavailable = nil
         availability = .idle
         walkLog.notice("walk: stopped following")
     }
 
+    /// Stops collecting and says so once, while leaving `availability` set so the
+    /// surface can still explain why the walk ended. `stop()` would reset it to
+    /// `.idle` and take the explanation with it.
+    private func becomeUnavailable(_ state: Availability) {
+        manager.stopUpdatingLocation()
+        onUpdate = nil
+        availability = state
+        let notify = onUnavailable
+        onUnavailable = nil
+        notify?()
+    }
+
     private func beginUpdates() {
         guard CLLocationManager.locationServicesEnabled() else {
-            availability = .unavailable
+            becomeUnavailable(.unavailable)
             return
         }
         availability = .following
@@ -78,9 +98,9 @@ final class WalkLocationProvider: NSObject, CLLocationManagerDelegate {
             guard let self, availability != .idle else { return }
             switch status {
             case .authorizedWhenInUse, .authorizedAlways: beginUpdates()
-            case .denied, .restricted: availability = .denied
+            case .denied, .restricted: becomeUnavailable(.denied)
             case .notDetermined: availability = .waitingForPermission
-            @unknown default: availability = .unavailable
+            @unknown default: becomeUnavailable(.unavailable)
             }
         }
     }
