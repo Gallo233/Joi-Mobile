@@ -115,6 +115,18 @@ final class AppModel {
     /// replayed receipt fail.
     @ObservationIgnored private let journeyReceipts = JourneyUseReceiptStore()
 
+    /// The proposal the user is deciding on, and the editable fields of the
+    /// sheet showing it (`G2-J2D`). While this is non-nil nothing has been
+    /// written; the record appears only on acceptance.
+    private(set) var memoryProposal: MemoryProposal?
+    var memoryDraft: String = ""
+    var memoryCategory: MemoryCategory = .relationship
+    /// What the current character durably remembers. A projection of the store,
+    /// which remains the only writer.
+    private(set) var memories: [MemoryRecordV1] = []
+    var isMemoryListPresented = false
+    @ObservationIgnored private let memoryStore: any MemoryRepository
+
     private let installer: CharacterPackageInstaller
     private let renderer: any CharacterRenderer
     private let chatController: ChatSessionController
@@ -134,11 +146,13 @@ final class AppModel {
         installer: CharacterPackageInstaller? = nil,
         renderer: any CharacterRenderer = StaticCharacterRenderer(),
         chatGateway: (any ChatGateway)? = nil,
+        memoryStore: (any MemoryRepository)? = nil,
         initialSelection: CharacterSelection = CharacterSelection(characterID: "joi.starter", displayName: "Joi"),
         threadID: String = "thread.local",
         sessionID: String = "session.local"
     ) {
         self.installer = installer ?? CharacterPackageInstaller(root: Self.defaultCharacterRoot())
+        self.memoryStore = memoryStore ?? MemoryStore(fileURL: MemoryStore.defaultFileURL())
         self.renderer = renderer
         // The default endpoint is the local contract mock in `Backend/`. A public
         // build must inject the official HTTPS proxy; `ChatBackendEndpoint`
@@ -294,6 +308,87 @@ final class AppModel {
     /// has no fact to hand over, and the action stays unavailable rather than
     /// inventing one.
     var canOfferJourneyAttachment: Bool { isWalking }
+
+    // MARK: - Durable memory (`G2-J2D`)
+
+    /// Whether this line may be remembered at all.
+    ///
+    /// The answer is the backend's, carried on the event and through the
+    /// transcript entry: a line marked `.none` offers no control rather than a
+    /// disabled one, because a greyed-out button invites the user to argue with
+    /// a decision that is not the app's to make.
+    func canRemember(_ entry: TranscriptEntry) -> Bool {
+        entry.memoryEligibility == .proposalAllowed
+    }
+
+    /// Opens a proposal for an eligible line. Writes nothing.
+    func proposeMemory(from entry: TranscriptEntry, now: Date = Date()) async {
+        guard canRemember(entry) else { return }
+        let snapshot = await companionSession.current()
+        let proposal = MemoryProposal(
+            entry: entry,
+            characterID: snapshot.selection.characterID,
+            threadID: snapshot.threadID,
+            at: now
+        )
+        memoryProposal = proposal
+        memoryDraft = proposal.proposal.value
+        memoryCategory = proposal.proposal.category
+    }
+
+    /// The user's decision to remember. This is the only path that writes a
+    /// durable record, which is what makes "nothing becomes durable silently"
+    /// checkable rather than asserted.
+    @discardableResult
+    func acceptMemoryProposal(now: Date = Date()) async -> MemoryProposalState? {
+        guard let proposal = memoryProposal else { return nil }
+        guard !proposal.isExpired(at: now) else {
+            memoryProposal = nil
+            return .expired
+        }
+        guard let accepted = proposal.acceptedRecord(
+            value: memoryDraft,
+            category: memoryCategory,
+            at: now
+        ) else { return nil }
+        do {
+            try await memoryStore.save(accepted.record, authorizationDigest: accepted.record.authorizationDigest)
+        } catch {
+            // A failed write leaves the proposal open rather than reporting a
+            // memory the store does not hold.
+            return nil
+        }
+        memoryProposal = nil
+        await refreshMemories()
+        return accepted.state
+    }
+
+    /// The user's decision not to. Nothing is written, and the transcript the
+    /// proposal came from is untouched.
+    func rejectMemoryProposal() {
+        memoryProposal = nil
+        memoryDraft = ""
+    }
+
+    func refreshMemories() async {
+        let snapshot = await companionSession.current()
+        memories = (try? await memoryStore.list(characterID: snapshot.selection.characterID)) ?? []
+    }
+
+    /// Deletion is durable: the record is gone from the store before the
+    /// projection is refreshed, so the list cannot show a deletion that did not
+    /// happen.
+    func deleteMemory(_ recordID: String) async {
+        try? await memoryStore.delete(recordID: recordID)
+        await refreshMemories()
+    }
+
+    func presentMemoryList() async {
+        await refreshMemories()
+        isMemoryListPresented = true
+    }
+
+    func dismissMemoryList() { isMemoryListPresented = false }
 
     /// Eight-point compass, because a bearing in degrees is not walkable.
     static func compass(_ degrees: Double) -> String {

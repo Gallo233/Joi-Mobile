@@ -218,6 +218,9 @@ struct StageControls: View {
     let onToggleFraming: () -> Void
     let onOpenTranscript: () -> Void
     let hasTranscript: Bool
+    /// Opens what the character durably remembers (`G2-J2D`). Secondary by
+    /// DEC-001, so it sits with the transcript rather than on the stage.
+    var onOpenMemories: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -234,6 +237,17 @@ struct StageControls: View {
             if hasTranscript {
                 Button(action: onOpenTranscript) {
                     Label(String(localized: "聊天记录"), systemImage: "text.bubble")
+                        .font(.footnote.weight(.medium))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial, in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+
+            if let onOpenMemories {
+                Button(action: onOpenMemories) {
+                    Label(String(localized: "记忆"), systemImage: "bookmark")
                         .font(.footnote.weight(.medium))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)

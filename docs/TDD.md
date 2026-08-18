@@ -482,6 +482,39 @@ proposals, journey attachment to a *place* rather than a route, or any device
 behaviour. `JM-P0-009` arrive-and-tell and `JM-P0-005` memory proposals remain
 unimplemented.
 
+### 6.11 G2-J2D — Deciding what the companion remembers
+
+`G2-J2D` gives `JM-P0-005` an implementation. `MemoryRecordV1`, `MemoryProposalV1`,
+`MemoryCategory`, `MemoryProvenance` and the `MemoryRepository` protocol have all
+been frozen contracts since G1 with nothing behind them, and `memoryEligibility`
+has travelled from the backend through `CompanionEventV1` into `TranscriptEntry`
+that whole time without a single reader. "No model-generated proposal becomes
+durable silently" was therefore a sentence with nothing enforcing it.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J2D-01` | Eligibility is the backend's answer and the app obeys it: a line marked `.none` offers no control at all, rather than a disabled one | App / `AppModel.canRemember` | eligibility-gate tests |
+| `J2D-02` | Opening a proposal writes nothing. A record exists only after an explicit acceptance, and that is the single code path that constructs one | App / `MemoryProposal.acceptedRecord`, `AppModel.acceptMemoryProposal` | no-silent-write tests |
+| `J2D-03` | The stored sentence is the user's. An edited acceptance is recorded as `editedAndAccepted`, because "approved the model's wording" and "rewrote it" are different provenance claims | App + CompanionCore / `MemoryProposalState` | edit-path test |
+| `J2D-04` | Declining writes nothing and leaves session, thread and transcript untouched | App / `AppModel.rejectMemoryProposal` | reject test |
+| `J2D-05` | Precise location is never promoted by being talked about: `preciseLocation` and `protectedNeverSync` are not offerable, and the record builder refuses them even when the category is forced | App / `MemoryProposal.selectableCategories` | forced-category test |
+| `J2D-06` | Nothing this slice writes may leave the device. Sync is opt-in per category and no such consent exists yet, so every record is `syncEligible == false` | App + CompanionCore / `MemoryRecordV1` | sync-eligibility tests |
+| `J2D-07` | Memory is durable and its deletion is durable: a new store over the same file sees what was written and cannot resurrect what was deleted. Deleting an absent record is an error, not a silent success | App / `MemoryStore` | persistence and deletion tests |
+| `J2D-08` | Memory is scoped to its character, and lives outside the character root so removing a package cannot take the conversation's memory with it | App / `MemoryStore.list`, `defaultFileURL` | per-character scoping test |
+| `J2D-09` | A proposal expires rather than standing indefinitely, so a sheet left open cannot write later | App / `MemoryProposal.isExpired` | expiry test |
+| `J2D-10` | All visible memory copy lives in the editable `zh-Hans` catalog | App / `Localizable.xcstrings` | surface-copy guard |
+
+The store is plain JSON under Application Support and is **not** encrypted. It
+relies on the device's own protection, and calling it encrypted without a key
+story would be a claim this repository has not earned. `JM-P0-023`'s export and
+server-acknowledged deletion remain unimplemented.
+
+This slice deliberately does **not** implement model-generated proposals.
+`CompanionEventV1` carries `memoryEligibility` but no proposal payload, so a
+proposal's content would have to be invented here; what exists instead is a
+user-initiated proposal that eligibility gates. A backend that proposes content
+needs a contract field first.
+
 ## 7. Map, navigation and offline PoC
 
 - Wrap MapLibre Native in `MapSurfaceProvider`; it renders online styles and verified downloaded corridor resources but never owns route truth.
@@ -617,30 +650,30 @@ The first slice is complete when traceability, XcodeGen generation, generic simu
 
 | ID | Requirement | Module | Interface / contract | Test evidence | Release gate |
 |---|---|---|---|---|---|
-| JM-P0-001 | Two-surface shell | App, CompanionCore | `CompanionSessionStore`, `PrimarySurface` | `SurfaceContinuityTests` | G1/G2 |
-| JM-P0-002 | Local-first first run | App, CharacterRuntime | `AppContainer`, package importer | `LocalFirstOnboardingTests` | G2 |
+| JM-P0-001 | Two-surface shell | App, CompanionCore | `CompanionSessionStore`, `PrimarySurface` | `StateOwnerTests`, `AppModelTests` surface cases | G1/G2 |
+| JM-P0-002 | Local-first first run | App, CharacterRuntime | `AppContainer`, package importer | **not implemented** — no first-run flow exists | G2 |
 | JM-P0-003 | Full Chat stage | ChatFeature, CharacterRuntime, App | `ChatGateway`, `ChatTurnProjection`, `CharacterRenderer` | `ChatTurnProjectionTests`, `AppModelTests` chat turn cases | G2/G4 |
 | JM-P0-004 | Official AI boundary | ChatFeature, Backend | OpenAPI `/v1/chat/streams`, `SSEChatGateway`, `ChatBackendEndpoint` | `SSEChatGatewayTests`, `MockBackendIntegrationTests`, secret scan | G1/G3 |
-| JM-P0-005 | Layered local memory | CompanionCore, SyncClient | memory repository, `MemorySyncRecordV1` | `MemoryProposalAndDeletionTests` | G3 |
-| JM-P0-006 | Cross-surface continuity | CompanionCore, App | `CompanionSessionStore`, `JourneyContextSnapshot`, `JourneyUseReceiptV1` | `ContextIsolationTests`, `JourneyAttachmentTests` | G1/G3 |
-| JM-P0-007 | Speech coordination | CompanionCore, App | `SpeechCoordinator`, `MouthOpening` | `SpeechGenerationTests`, `MouthOpeningTests` | G2/G4 |
-| JM-P0-008 | Persistent Map experience | MapFeature, App | `JourneyContextStore`, drawer state | `MapShellStateTests` | G2/G4 |
-| JM-P0-009 | Arrive-and-tell | MapFeature | place resolver, `JourneyContextSnapshot` | `PlaceConfirmationTests`, GPS field script | G2/G4 |
-| JM-P0-010 | See-and-ask | MapFeature, Backend | vision upload contract | `RecognitionStalenessTests`, camera script | G3/G4 |
-| JM-P0-011 | Cultural walking navigation | MapFeature, Backend | `NavigationProvider`, route API | `NavigationSessionTests`, outdoor walk | G2/G4 |
-| JM-P0-012 | Routes-as-narrative | MapFeature, OfflinePack | `TravelPackManifestV1`, narrative state | `NarrativeProgressTests` | G2 |
-| JM-P0-013 | Trusted sources | CompanionCore, MapFeature | source projection in `CompanionEventV1` | `SourceEligibilityTests` | G2/G3 |
-| JM-P0-014 | Offline travel pack | OfflinePack, MapFeature | `TravelPackManifestV1`, cached navigation | `OfflineRouteProgressTests`, flight-mode walk | G2/G4/G5 |
-| JM-P0-015 | Character library/import | CharacterRuntime, App | `CharacterPackageManifestV1`, `CharacterMotionV1` | `CharacterImportTests`, motion contract cases | G2/G3/G5 |
-| JM-P0-016 | Native renderer parity | CharacterRuntime | `CharacterRenderer`, compatibility receipt, `CharacterContentAccess.motions` | `Live2DAdapterTests`, `VRMAdapterTests`, device matrix | G4/G5 |
-| JM-P0-017 | Package isolation/safety | CharacterRuntime, Contracts | package schema and validator | `MaliciousPackageFixtureTests` | G1/G3 |
-| JM-P0-018 | Secondary controls | App, SyncClient | settings routes, repositories | `SecondaryNavigationTests` | G2 |
-| JM-P0-019 | Optional category sync | SyncClient, Backend | `SyncGateway`, `MemorySyncRecordV1`, `CharacterPackageSyncRecordV1`, `LocationSyncAuthorizationV1` | `CursorConflictTombstoneTests`, `PreciseLocationSyncIsolationTests` | G3 |
-| JM-P0-020 | Editable Simplified-Chinese copy | App, all features, Backend | String Catalog, locale context and cache-key contract | `ChineseCopyCatalogTests` | G1/G2 |
+| JM-P0-005 | Layered local memory | CompanionCore, App, SyncClient | `MemoryRepository`, `MemoryProposalV1`, `MemoryRecordV1` | `MemoryProposalTests`, `StateOwnerTests` location case | G3 |
+| JM-P0-006 | Cross-surface continuity | CompanionCore, App | `CompanionSessionStore`, `JourneyContextSnapshot`, `JourneyUseReceiptV1` | `JourneyConsentTests`, `JourneyAttachmentTests` | G1/G3 |
+| JM-P0-007 | Speech coordination | CompanionCore, App | `SpeechCoordinator`, `MouthOpening` | `SpeechCoordinationTests`, `MouthOpeningTests` | G2/G4 |
+| JM-P0-008 | Persistent Map experience | MapFeature, App | `JourneyContextStore`, drawer state | `MapExperienceStateTests`, `CachedWalkTests` | G2/G4 |
+| JM-P0-009 | Arrive-and-tell | MapFeature | place resolver, `JourneyContextSnapshot` | **not implemented** — no place resolver exists; GPS field script remains G4 | G2/G4 |
+| JM-P0-010 | See-and-ask | MapFeature, Backend | vision upload contract | **not implemented** — no capture or recognition path exists | G3/G4 |
+| JM-P0-011 | Cultural walking navigation | MapFeature, Backend | `NavigationProvider`, route API | `RouteProgressEngineTests`, `CachedWalkTests`; **no Ferrostar integration**, outdoor walk remains G4 | G2/G4 |
+| JM-P0-012 | Routes-as-narrative | MapFeature, OfflinePack | `TravelPackManifestV1`, narrative state | **not implemented** — no stops, pacing or recap exist | G2 |
+| JM-P0-013 | Trusted sources | CompanionCore, MapFeature | `SourceProjectionV1` in `CompanionEventV1` | **not implemented** — the contract is parsed, nothing renders or gates on it | G2/G3 |
+| JM-P0-014 | Offline travel pack | OfflinePack, MapFeature | `TravelPackManifestV1`, cached navigation | `OfflinePackVerifierTests`, `RouteProgressEngineTests`; **no pack import**, flight-mode walk remains G4 | G2/G4/G5 |
+| JM-P0-015 | Character library/import | CharacterRuntime, App | `CharacterPackageManifestV1`, `CharacterMotionV1` | `CharacterPackageInstallerTests`, `CharacterPackageValidatorTests` | G2/G3/G5 |
+| JM-P0-016 | Native renderer parity | CharacterRuntime | `CharacterRenderer`, compatibility receipt, `CharacterContentAccess.motions` | `Live2DNativeAdapterTests`, `VRMNativeAdapterTests`; device matrix remains G4 | G4/G5 |
+| JM-P0-017 | Package isolation/safety | CharacterRuntime, Contracts | package schema and validator | `CharacterPackageValidatorTests`, `RestrictedZIPConformanceTests`, `CrossPlatformConformanceTests` | G1/G3 |
+| JM-P0-018 | Secondary controls | App, SyncClient | settings routes, repositories | **partial** — character library and memory list exist and are covered by `AppModelTests` and `MemoryProposalTests`; no settings or account route exists | G2 |
+| JM-P0-019 | Optional category sync | SyncClient, Backend | `SyncGateway`, `MemorySyncRecordV1`, `CharacterPackageSyncRecordV1`, `LocationSyncAuthorizationV1` | `SyncConsentStoreTests`, `StateOwnerTests` location case; **no sync client or cursor/tombstone replay exists** | G3 |
+| JM-P0-020 | Editable Simplified-Chinese copy | App, all features, Backend | String Catalog, locale context and cache-key contract | `ContractArtifactTests` catalog and surface-copy cases | G1/G2 |
 | JM-P0-021 | Deferred experience hooks | App, all UI features | semantic labels, system text styles and motion-policy seams | shell hook smoke tests; full matrix deferred | G1 / later accessibility gate |
-| JM-P0-022 | Failure/recovery contract | all modules | typed error/state enums | `NamedFailureFixtureTests` | G2/G3 |
-| JM-P0-023 | Data-purpose governance | App, Backend, SyncClient | consent/media receipts, export and deletion request/status contracts | `PurposeAndDeletionTests`, `ExportDeletionAcknowledgementTests` | G3/G6 |
-| JM-P0-024 | Privacy-safe quality metrics | App, Backend | analytics allowlist | `AnalyticsRedactionTests` | G3/G6 |
+| JM-P0-022 | Failure/recovery contract | all modules | typed error/state enums | `AppModelTests`, `ChatSessionControllerTests`, `JourneyAttachmentTests` expiry case; **no cross-module fixture corpus** | G2/G3 |
+| JM-P0-023 | Data-purpose governance | App, Backend, SyncClient | consent/media receipts, export and deletion request/status contracts | **partial** — local memory deletion is covered by `MemoryProposalTests`; no export, no server acknowledgement | G3/G6 |
+| JM-P0-024 | Privacy-safe quality metrics | App, Backend | analytics allowlist | **not implemented** — no analytics exist; `ProviderConfidentialityTests` covers only proxy redaction | G3/G6 |
 
 ## 13. Scheme Gate decisions after G0 rework
 

@@ -99,7 +99,64 @@ def constant(source: str, pattern: str) -> int:
     return value
 
 
+SWIFT_SUITE = re.compile(r"\b(?:final\s+)?class\s+([A-Za-z0-9_]+)\s*:\s*XCTestCase")
+PYTHON_SUITE = re.compile(r"^class\s+([A-Za-z0-9_]+)\(", re.MULTILINE)
+NAMED_SUITE = re.compile(r"`([A-Za-z0-9_]+Tests)`")
+
+
+def declared_test_suites() -> set[str]:
+    """Every test suite that actually exists in this repository."""
+    suites: set[str] = set()
+    sources = [
+        path
+        for path in ROOT.glob("Packages/*/Tests/**/*.swift")
+        if ".build" not in path.parts
+    ]
+    sources += list((ROOT / "Tests/Swift").glob("*.swift"))
+    for path in sources:
+        suites.update(SWIFT_SUITE.findall(path.read_text(encoding="utf-8")))
+    for path in list((ROOT / "Tests").glob("*.py")) + list((ROOT / "Backend").glob("*.py")):
+        suites.update(PYTHON_SUITE.findall(path.read_text(encoding="utf-8")))
+    return suites
+
+
+def traceability_rows() -> list[list[str]]:
+    tdd = read(ROOT / "docs/TDD.md")
+    section = tdd[tdd.index("## 12. PRD Traceability") :]
+    section = section[: section.index("## 13")]
+    return [
+        [cell.strip() for cell in line.strip().strip("|").split("|")]
+        for line in section.splitlines()
+        if line.strip().startswith("| JM-P0")
+    ]
+
+
 class ContractArtifactTests(unittest.TestCase):
+    def test_every_test_named_in_traceability_actually_exists(self) -> None:
+        """A P0 may not be traced to a test that was never written.
+
+        `check_prd_tdd.py` requires each P0 row to carry a non-empty evidence
+        cell, which a plausible-looking suite name satisfies without any such
+        suite existing. On 2026-08-18 that was true of 24 of the 30 names in the
+        table. A requirement whose evidence is fictional is worse than one openly
+        marked unimplemented, because it reads as covered — so an unimplemented
+        P0 must say so in words instead of naming a suite.
+        """
+        declared = declared_test_suites()
+        self.assertGreater(len(declared), 20, "the suite inventory itself looks broken")
+        fictional: list[str] = []
+        for row in traceability_rows():
+            for name in NAMED_SUITE.findall(row[4]):
+                if name not in declared:
+                    fictional.append(f"{row[0]}: {name}")
+        self.assertEqual(fictional, [], f"traceability names tests that do not exist: {fictional}")
+
+    def test_every_p0_requirement_has_a_traceability_row(self) -> None:
+        rows = traceability_rows()
+        self.assertEqual(len(rows), 24)
+        for row in rows:
+            self.assertTrue(row[4], f"{row[0]} has an empty evidence cell")
+
     def test_all_json_contracts_and_fixtures_parse(self) -> None:
         files = sorted(CONTRACTS.rglob("*.json"))
         self.assertGreaterEqual(len(files), 7)
@@ -149,6 +206,9 @@ class ContractArtifactTests(unittest.TestCase):
             "JoiMobile/App/MapExperienceView.swift",
             "JoiMobile/App/JourneyAttachment.swift",
             "JoiMobile/App/AppModel.swift",
+            # G2-J2D memory proposal, list and category labels.
+            "JoiMobile/App/MemoryViews.swift",
+            "JoiMobile/App/MemoryProposal.swift",
         ]
         missing: list[str] = []
         for name in surface:

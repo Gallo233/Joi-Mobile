@@ -29,6 +29,15 @@ struct ChatStageView: View {
             }
         }
         .animation(reduceMotion ? nil : .snappy(duration: 0.28), value: model.isTranscriptPresented)
+        // Presented rather than inline: deciding what a companion remembers
+        // deserves the whole screen and an explicit confirm, not a control the
+        // thumb can brush past.
+        .sheet(item: Binding(get: { model.memoryProposal }, set: { if $0 == nil { model.rejectMemoryProposal() } })) { proposal in
+            MemoryProposalSheet(model: model, proposal: proposal)
+        }
+        .sheet(isPresented: Binding(get: { model.isMemoryListPresented }, set: { if !$0 { model.dismissMemoryList() } })) {
+            MemoryListView(model: model)
+        }
     }
 
     private var chrome: some View {
@@ -39,7 +48,8 @@ struct ChatStageView: View {
                 framing: model.stageFraming,
                 onToggleFraming: { model.toggleStageFraming() },
                 onOpenTranscript: { model.presentTranscript() },
-                hasTranscript: !model.chatTranscript.isEmpty
+                hasTranscript: !model.chatTranscript.isEmpty,
+                onOpenMemories: { Task { await model.presentMemoryList() } }
             )
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20)
@@ -157,7 +167,9 @@ struct ChatStageView: View {
             TranscriptDrawer(
                 transcript: model.chatTranscript,
                 characterName: characterName,
-                onClose: { model.dismissTranscript() }
+                onClose: { model.dismissTranscript() },
+                canRemember: { model.canRemember($0) },
+                onRemember: { entry in Task { await model.proposeMemory(from: entry) } }
             )
             .frame(maxWidth: 330)
             .transition(.move(edge: .trailing))

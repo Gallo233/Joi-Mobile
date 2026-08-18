@@ -80,6 +80,10 @@ struct TranscriptDrawer: View {
     let transcript: [TranscriptEntry]
     let characterName: String
     let onClose: () -> Void
+    /// Whether a given line may be proposed as memory, and what to do when the
+    /// user asks for it (`G2-J2D`).
+    var canRemember: (TranscriptEntry) -> Bool = { _ in false }
+    var onRemember: (TranscriptEntry) -> Void = { _ in }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -110,8 +114,12 @@ struct TranscriptDrawer: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 12) {
                             ForEach(transcript, id: \.eventID) { entry in
-                                TranscriptRow(entry: entry, characterName: characterName)
-                                    .id(entry.eventID)
+                                TranscriptRow(
+                                    entry: entry,
+                                    characterName: characterName,
+                                    onRemember: canRemember(entry) ? { onRemember(entry) } : nil
+                                )
+                                .id(entry.eventID)
                             }
                         }
                         .padding(16)
@@ -134,14 +142,28 @@ struct TranscriptDrawer: View {
 private struct TranscriptRow: View {
     let entry: TranscriptEntry
     let characterName: String
+    /// `nil` when this line may not be remembered. The control is absent rather
+    /// than disabled: eligibility is the backend's answer, and a greyed-out
+    /// button invites the user to argue with a decision the app does not own.
+    var onRemember: (() -> Void)?
 
     private var isUser: Bool { entry.author == .user }
 
     var body: some View {
         VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
-            Text(isUser ? String(localized: "我") : characterName)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                Text(isUser ? String(localized: "我") : characterName)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                if let onRemember {
+                    Button(String(localized: "记住"), systemImage: "bookmark", action: onRemember)
+                        .labelStyle(.iconOnly)
+                        .font(.caption)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.indigo)
+                        .accessibilityLabel(String(localized: "记住这句话"))
+                }
+            }
             Text(entry.text)
                 .font(.callout)
                 .padding(.horizontal, 12)
