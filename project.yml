@@ -47,6 +47,14 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         NSMicrophoneUsageDescription: 仅在你按住说话时，Joi 才会使用麦克风。
+        # The system prompt above this string is Apple's and always says speech
+        # data may be sent to Apple, because the permission itself covers server
+        # recognition. Flatly denying that on the same screen would read as the
+        # app arguing with iOS, so this says what Joi actually does with the
+        # permission instead: it only ever asks for the on-device recogniser
+        # (DEC-031), and declines voice input rather than taking the uploading
+        # path when that is unavailable.
+        NSSpeechRecognitionUsageDescription: Joi 只使用本机语音识别；若这台设备无法本机识别，Joi 会关闭语音输入，而不会改用需要上传录音的方式。
         NSLocationWhenInUseUsageDescription: 仅在可见的文化步行或地点请求中，Joi 才会使用你的位置。
         NSCameraUsageDescription: 仅在你主动使用“看见就问”时，Joi 才会使用相机。
         NSPhotoLibraryUsageDescription: Joi 只会读取你为地点提问主动选择的照片。

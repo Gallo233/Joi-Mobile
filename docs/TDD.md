@@ -354,7 +354,8 @@ The next Journey 1 slice (`J1B`) must implement streaming archive/raw-file wrapp
 | `J1B-04` | Legacy-only `zh` becomes `zh-Hans` with an explicit compatibility warning and resolved-locale receipt; no general silent locale fallback exists | CharacterRuntime / compatibility receipt | locale mapping/rejection tests |
 | `J1B-05` | Only a versioned, strict, size-bounded `LegacyManifestReceiptV1` retains allowlisted compatibility fields. It recursively rejects secrets and user state, drops model-weight paths/capability grants/unknown extensions, and never enters assets, runtime, memory, logs, analytics or sync | CharacterRuntime / legacy receipt decoder | bounded receipt and forbidden-field tests |
 | `J1B-06` | ZIPFoundation is pinned exactly to `0.9.20` at revision `22787ffb59de99e5dc1fbfe80b19c97a904ad48d`, used only for streamed decompression and CRC; no high-level path extraction API is called | CharacterRuntime / `ZIPFoundationArchiveReader` | resolved pin, notice, dependency policy and source scan |
-| `J1B-07` | An owned raw EOCD/central/local preflight rejects ZIP64, multidisk, encryption, data descriptors, unsupported methods, header disagreement, overlapping ranges, special/executable/link entries and unknown or link-bearing extra fields before any output path is opened. Restricted-profile rejection uses stable `unsupportedArchiveProfile` | CharacterRuntime / `RestrictedZIPPreflight` | malicious archive corpus and fuzz seed suite |
+| `J1B-07` | An owned raw EOCD/central/local preflight rejects ZIP64, multidisk, encryption, unsupported methods, header disagreement, overlapping ranges, special/executable/link entries and unknown or link-bearing extra fields before any output path is opened. Restricted-profile rejection uses stable `unsupportedArchiveProfile` | CharacterRuntime / `RestrictedZIPPreflight` | malicious archive corpus and fuzz seed suite |
+| `J1B-07a` | The data-descriptor flag is **admitted**, not refused: a streaming writer sets it because it cannot know the CRC or size until the payload is written, and refusing it made ordinary archives unimportable. The local header must then be either placeholder zeros or in exact agreement with the central directory; an archive that sets the flag and satisfies neither contradicts itself and is `malformedArchive` rather than merely outside the profile | CharacterRuntime / `RestrictedZIPPreflight` | streaming-written archive installs with its payload intact; self-contradictory archive rejected |
 | `J1B-08` | Streaming limits are checked with `UInt64` before writes: 128 MiB archive, 512 MiB expanded, 2,000 files and 20:1 aggregate expansion; post-write files are regular with one link, and extension, media type, magic, parser and model graph agree | CharacterRuntime / path, magic and model validators | exact-boundary/+1, collision, nested archive, magic and graph tests |
 | `J1B-09` | Raw VRM is wrapped into a canonical manifest; Live2D ZIP admits exactly one model3 reference closure and rejects unrelated members; rights-unknown content remains quarantine-only | CharacterRuntime / import adapters | raw VRM, Live2D closure and rights tests |
 | `J1B-10` | Commit occurs only after same-volume atomic move into content-addressed storage and atomic catalog replacement. Pre-commit cancel rolls back; post-commit cancel returns success. Startup recovery removes abandoned stages/orphan seals and quarantines missing or mutated roots | CharacterRuntime / content store | phase, crash, recovery and mutation tests |
@@ -393,6 +394,93 @@ The Studio may begin consumer work only after these contracts, the dependency pi
 The user's own message is not appended locally at send time. It becomes a transcript line only when the backend returns its `acceptedInput` event, so the transcript has a single source of truth and a turn can never append twice. While the turn is in flight the text is shown as explicitly unconfirmed pending content.
 
 This slice does **not** prove response quality, push-to-talk, speech synthesis, memory proposals, source projection rendering, journey attachment, incremental token streaming or any device behaviour. Token-level streaming needs a backend that actually chunks its events; the current mock returns whole events, so the reducer's draft path exists and is tested but has no production evidence yet.
+
+### 6.7 G2-J2B — The character speaks, and its mouth follows the audio
+
+`G2-J2B` is the second slice of PRD Journey 2. It makes one accepted reply audible in the character's own voice and moves the character's mouth from that audio. It is deliberately local-only: the voice comes from a local speech service behind the same proxy boundary as Chat, and no cloud speech service is involved. Real-device audio routing, interruption handling, background audio and language breadth are later work.
+
+This slice was implemented before it was specified — DEC-021, DEC-022 and DEC-025 record the decisions and `docs/STATUS.md` records simulator evidence, but no acceptance rows or unit tests existed. These rows and their tests close that gap; where an acceptance can only be shown on a device, it says so instead of claiming a simulator result.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J2B-01` | Mouth opening is a pure function of the level of the audio actually playing plus elapsed time. It holds no reference to a player, a clock or a renderer, so the rule is provable without audio hardware | App / `MouthOpening` | `MouthOpeningTests` |
+| `J2B-02` | A level at or below the silence floor reads as a closed mouth, and `nil` — nothing playing — releases towards closed rather than snapping | App / `MouthOpening.advance(levelDecibels:elapsed:)` | floor and release tests |
+| `J2B-03` | Opening is shaped in seconds, not in polls: the same elapsed time reaches the same value whether a renderer asks once or many times, so a stage that drops below 60 fps does not change how the mouth moves | App / `MouthOpening` | subdivision-invariance test |
+| `J2B-04` | Opening is faster than closing, because a mouth that closes as fast as it opens chatters on syllable edges | App / `MouthOpening` | attack-vs-release test |
+| `J2B-05` | Level is clamped into `0...1` for any input, including values above full scale and below the floor, so a renderer can never be handed a weight it must itself defend against | App / `MouthOpening` | boundary tests |
+| `J2B-06` | The app claims `AVAudioSession` `.playback`/`.spokenAudio` before the first line and not at launch, so the ring/silent switch cannot mute the character and opening the app does not interrupt the user's own audio | App / `SpeechPlayer.activateSession` | code policy; device confirmation deferred to G4 |
+| `J2B-07` | VRM drives exactly one viseme from loudness and Live2D drives its model-declared `LipSync` parameters; neither infers phonemes, which amplitude cannot supply | App / `VRMStageSurface`, `JoiLive2DModel` | DEC-025; simulator evidence in `docs/STATUS.md` |
+| `J2B-08` | Nothing speaks without asking `SpeechCoordinator` first. An accepted companion line is spoken only for a cue the coordinator accepts, and the coordinator's current cue is the single answer to "what is the character saying" | App + CompanionCore / `AppModel.apply`, `SpeechCoordinator.begin` | App model speech-coordination tests |
+| `J2B-09` | A newer accepted line preempts an older one through the coordinator, so the superseded generation stops being accepted for completion. Last-writer-wins inside the player is not sufficient: priority has to be decidable before the fetch starts, which is what later place and route narration will need | App + CompanionCore / `SpeechStartResult.preempted` | preemption and stale-generation tests |
+| `J2B-10` | User stop cancels through the coordinator, not only in the player, so a line that completes after the stop is refused rather than accepted as the current one | App + CompanionCore / `stopChatTurn`, `SpeechCoordinator.cancel` | cancellation and late-completion tests |
+
+Speech follows acceptance, never a draft: a line that was superseded or cancelled must never be spoken, so `speak` is called only for an `acceptedFinal` companion event carrying an explicit `voiceLine`. A model that ignores the output format yields no `voiceLine`, which is silence rather than Chinese text read by a Japanese voice — the DEC-021 silence rule, restated here because it is the reason this slice has no "fall back to a system voice" row.
+
+### 6.8 G2-J2C — Push-to-talk voice input
+
+`G2-J2C` makes the composer's microphone real. It is the last dead control in the conversation loop: the button was drawn, disabled, and labelled "语音输入尚未启用". Speaking fills the composer with an editable draft; it does not send. Wake words, barge-in over the character's own speech, and dictation of long passages are later work.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J2C-01` | Recognition runs on device or the feature reports itself unavailable; audio is never uploaded as a silent fallback (DEC-031) | App / `VoiceInput.availability` | availability tests |
+| `J2C-02` | Microphone and recognition authorisation are requested only when the user first presses to talk, never at launch, and a refusal is a named state rather than a dead button | App / `VoiceInput.State` | permission-state tests |
+| `J2C-03` | Releasing ends the utterance and leaves the text in `chatDraft` as an editable draft; nothing is sent on the user's behalf | App / `AppModel.finishVoiceInput` | app model tests |
+| `J2C-04` | Every failure is one of a closed set of named states carrying Chinese copy — unavailable, denied, no speech heard, recogniser failed — and none of them clears an existing draft | App / `VoiceInput.State` | named-failure tests |
+| `J2C-05` | Listening cannot start while a turn is in flight or while the character is speaking, so the microphone never records the character's own voice | App / `AppModel.beginVoiceInput` | guard tests |
+| `J2C-06` | Recording takes the audio session as `.playAndRecord` and returns it to `.playback` when it ends, so speech output still works after a recording and the character is not left mute | App / `SpeechPlayer`, `VoiceInput` | session-restoration test; device confirmation deferred to G4 |
+
+Live transcription accuracy is not a simulator claim: the recogniser needs real speech, and the simulator has no microphone of its own. This slice proves state, authorisation, availability and session handling; word accuracy and barge-in behaviour remain G4.
+
+### 6.9 G2-J3A — Following a cached cultural walk
+
+`G2-J3A` makes the Map surface real. `RouteProgressEngine` and `JourneyContextStore` were both already built and tested; nothing joined them to a surface, so the second of the product's two primary surfaces was a card of fixed text with a dead button. This slice joins them. Tile rendering, turn-by-turn maneuvers, ETA and downloaded travel packs remain out of scope — DEC-004 promises a cached corridor, progress along it and guidance back, and this slice delivers exactly that.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J3A-01` | The surface draws the cached route's own shape, the walked portion and the current position. There is no basemap and no claim to one | App / `MapExperienceView`, `CachedWalk.normalizedPath` | simulator evidence in `docs/STATUS.md` |
+| `J3A-02` | Progress along the route is computed by `RouteProgressEngine` and recorded only by `JourneyContextStore`; the view holds a projection | App + OfflinePack + CompanionCore | `CachedWalkTests` journey-ownership case |
+| `J3A-03` | Leaving the corridor produces a distance and a walkable direction back, and arriving is distinguished from merely reaching 100% | App / `AppModel.walkGuidance` | departure, arrival and compass tests; simulated-location evidence |
+| `J3A-04` | Location is requested when-in-use only, on a deliberate tap, and stops with the walk; no background authorisation is ever requested | App / `WalkLocationProvider` | the system prompt offers no "always" option; foreground-only by construction |
+| `J3A-05` | A walk changes nothing about the conversation: no thread, transcript or memory write | App + CompanionCore | conversation-isolation test |
+| `J3A-06` | The bundled route is labelled a sample wherever it appears, because it is not a downloaded travel pack with a rights receipt | App / `CachedWalk.sample` | copy review; `TravelPackManifestV1` import remains later work |
+
+A bearing is not walkable, so guidance is given in eight compass points. The route is followed, never planned: DEC-004's boundary is that arbitrary offline routing is not a product promise, and nothing in this slice computes a new route.
+
+### 6.10 G2-J3B — One turn's worth of journey context
+
+`G2-J3B` is the return half of PRD Journey 3. Chat and Map are both real surfaces
+now, and nothing joined them: `ChatRequest` has carried `journeyAttachment` and
+`journeyReceipt` since G1 — with validation for purpose, identity, digest,
+validity window and revocation, and `JourneyUseReceiptStore` enforcing single
+use — and every request the app built passed `nil` for both. The contract that
+governs how location reaches a conversation had never been exercised by the
+product. This slice exercises it, and nothing more: memory proposals, place
+resolution and source projection stay out.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J3B-01` | The payload is coarsened onto a fixed grid when it is built, and its accuracy field is raised to that grid, so no precise fix has a path into Chat and none is described as more exact than it is | App / `JourneyAttachment.coarsen` | coarsening and accuracy tests |
+| `J3B-02` | The preview and the payload are one value. Every field shown is a field that travels, printed at the payload's own resolution | App / `JourneyAttachment.positionLine`, `JourneyAttachmentCard` | preview-matches-payload test |
+| `J3B-03` | The payload names the scope it was approved under, and the digest covers that field, so an approval for one chat turn cannot validate a payload scoped to anything else | App + CompanionCore / `JourneyContextSnapshot.payloadDigest` | scope-digest test |
+| `J3B-04` | A sent attachment carries a receipt naming this thread and this request and holding this payload's digest, and that receipt passes `ChatRequest.validate` | App / `AppModel.runChatTurn` | receipt-binding test |
+| `J3B-05` | One approval authorises one turn: the offer ends at the send, the next turn carries nothing, and replaying the receipt is refused by `JourneyUseReceiptStore` rather than by App bookkeeping | App + CompanionCore / `JourneyUseReceiptStore.consume` | single-use and replay tests |
+| `J3B-06` | Revoking removes the location and leaves the composer text untouched | App / `AppModel.revokeJourneyAttachment` | revoke test |
+| `J3B-07` | An expired attachment refuses the send with a named state and keeps the draft; the message is never sent with the location silently dropped | App / `AppModel.sendChatMessage` | expiry test |
+| `J3B-08` | Switching surfaces preserves a pending attachment, per PRD §6.5; stopping the walk withdraws it | App / `AppModel.select`, `stopWalk` | surface-switch and stop-walk tests |
+| `J3B-09` | No coordinate becomes a transcript line: an attachment is metadata on one request, not text | App + CompanionCore | transcript-isolation test |
+| `J3B-10` | An attachment authorises a chat turn and nothing else. The journey owner's own record, including its scope, is unchanged by having been asked about | App + CompanionCore / `JourneyContextStore` | purpose and journey-isolation tests |
+
+The attachment is offered on the strength of the journey owner's snapshot rather
+than of the walk flag, so the rule cannot be satisfied by stale UI state; an
+empty snapshot yields no attachment at all. Coarsening happens at construction
+for one reason: if the preview were rendered from a precise value and the payload
+reduced later, "inspectable" would be false in exactly the way that matters. See
+DEC-032.
+
+This slice does **not** prove place resolution, source projection, memory
+proposals, journey attachment to a *place* rather than a route, or any device
+behaviour. `JM-P0-009` arrive-and-tell and `JM-P0-005` memory proposals remain
+unimplemented.
 
 ## 7. Map, navigation and offline PoC
 
@@ -534,8 +622,8 @@ The first slice is complete when traceability, XcodeGen generation, generic simu
 | JM-P0-003 | Full Chat stage | ChatFeature, CharacterRuntime, App | `ChatGateway`, `ChatTurnProjection`, `CharacterRenderer` | `ChatTurnProjectionTests`, `AppModelTests` chat turn cases | G2/G4 |
 | JM-P0-004 | Official AI boundary | ChatFeature, Backend | OpenAPI `/v1/chat/streams`, `SSEChatGateway`, `ChatBackendEndpoint` | `SSEChatGatewayTests`, `MockBackendIntegrationTests`, secret scan | G1/G3 |
 | JM-P0-005 | Layered local memory | CompanionCore, SyncClient | memory repository, `MemorySyncRecordV1` | `MemoryProposalAndDeletionTests` | G3 |
-| JM-P0-006 | Cross-surface continuity | CompanionCore, App | `CompanionSessionStore`, `JourneyContextSnapshot` | `ContextIsolationTests` | G1/G3 |
-| JM-P0-007 | Speech coordination | CompanionCore | `SpeechCoordinator` | `SpeechGenerationTests` | G2/G4 |
+| JM-P0-006 | Cross-surface continuity | CompanionCore, App | `CompanionSessionStore`, `JourneyContextSnapshot`, `JourneyUseReceiptV1` | `ContextIsolationTests`, `JourneyAttachmentTests` | G1/G3 |
+| JM-P0-007 | Speech coordination | CompanionCore, App | `SpeechCoordinator`, `MouthOpening` | `SpeechGenerationTests`, `MouthOpeningTests` | G2/G4 |
 | JM-P0-008 | Persistent Map experience | MapFeature, App | `JourneyContextStore`, drawer state | `MapShellStateTests` | G2/G4 |
 | JM-P0-009 | Arrive-and-tell | MapFeature | place resolver, `JourneyContextSnapshot` | `PlaceConfirmationTests`, GPS field script | G2/G4 |
 | JM-P0-010 | See-and-ask | MapFeature, Backend | vision upload contract | `RecognitionStalenessTests`, camera script | G3/G4 |

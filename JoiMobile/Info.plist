@@ -52,6 +52,8 @@
 	<string>仅在你按住说话时，Joi 才会使用麦克风。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Joi 只会读取你为地点提问主动选择的照片。</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Joi 只使用本机语音识别；若这台设备无法本机识别，Joi 会关闭语音输入，而不会改用需要上传录音的方式。</string>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>UILaunchScreen</key>

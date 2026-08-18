@@ -15,6 +15,76 @@ def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+HAN = re.compile(r"[\u4e00-\u9fff]")
+
+# `%@`, `%lld` and friends, plus the interpolation placeholder below, all stand
+# for "a hole the code fills in".
+SPECIFIER = re.compile(r"%(?:@|lld|ld|lf|d|s)")
+HOLE = "\x00"
+
+
+def canonical_copy(text: str) -> str:
+    """A literal and its catalog key reduced to one comparable form.
+
+    Xcode writes a hole as `%@` or `%lld` depending on the interpolated type, and
+    doubles a literal percent. Reducing both sides means this guard checks the
+    thing it is for — that a visible string has *an* entry — without having to
+    infer Swift types from a regex.
+    """
+    return SPECIFIER.sub(HOLE, text).replace("%%", "%")
+
+
+def swift_string_literals(source: str) -> list[str]:
+    """Every string literal in Swift source, with each `\\(...)` interpolation
+    replaced by a hole.
+
+    Written as a scanner rather than a regex because interpolations nest: the
+    previous regex admitted only `\\([^()]*)`, so `\\(Int(x.rounded()))` matched
+    nothing and every string containing one was skipped silently — which is how
+    a visible Map string reached the surface unchecked. Comments are skipped too,
+    so prose that quotes a Chinese string is not mistaken for product copy.
+    """
+    literals: list[str] = []
+    index, end = 0, len(source)
+    while index < end:
+        char = source[index]
+        if char == "/" and source.startswith("//", index):
+            newline = source.find("\n", index)
+            if newline == -1:
+                break
+            index = newline + 1
+            continue
+        if char == "/" and source.startswith("/*", index):
+            close = source.find("*/", index + 2)
+            index = end if close == -1 else close + 2
+            continue
+        if char != '"':
+            index += 1
+            continue
+        index += 1
+        buffer: list[str] = []
+        while index < end:
+            char = source[index]
+            if char == "\\" and index + 1 < end:
+                if source[index + 1] == "(":
+                    depth, index = 1, index + 2
+                    while index < end and depth:
+                        depth += (source[index] == "(") - (source[index] == ")")
+                        index += 1
+                    buffer.append(HOLE)
+                    continue
+                buffer.append(source[index : index + 2])
+                index += 2
+                continue
+            if char in '"\n':
+                index += 1
+                break
+            buffer.append(char)
+            index += 1
+        literals.append("".join(buffer))
+    return literals
+
+
 def constant(source: str, pattern: str) -> int:
     """A literal integer constant, read out of Swift or Kotlin source.
 
@@ -64,30 +134,31 @@ class ContractArtifactTests(unittest.TestCase):
         }
         self.assertTrue(expected.issubset(catalog["strings"]))
 
-    def test_no_visible_chat_copy_bypasses_the_editable_catalog(self) -> None:
-        """Every zh-Hans literal in the Chat surface must have a catalog key."""
+    def test_no_visible_surface_copy_bypasses_the_editable_catalog(self) -> None:
+        """Every zh-Hans literal on a product surface must have a catalog key."""
         catalog = json.loads(
             (ROOT / "JoiMobile/Resources/Localizable.xcstrings").read_text(encoding="utf-8")
         )
-        keys = catalog["strings"]
-        # Chinese string literals, with Swift interpolation normalised to %@. The
-        # segment alternation must admit `\(...)` explicitly: a regex that simply
-        # excludes backslashes skips every interpolated string, which is the exact
-        # case this guard exists to check.
-        segment = r'(?:[^"\\\n]|\\\([^()]*\))'
+        keys = {canonical_copy(key) for key in catalog["strings"]}
         surface = [
             "JoiMobile/App/ChatStageView.swift",
             "JoiMobile/App/CharacterStageView.swift",
             "JoiMobile/App/ChatBubbleAndTranscript.swift",
+            # G2-J3A/J3B put visible copy on the Map surface and in the journey
+            # attachment, so both are guarded here rather than only Chat.
+            "JoiMobile/App/MapExperienceView.swift",
+            "JoiMobile/App/JourneyAttachment.swift",
+            "JoiMobile/App/AppModel.swift",
         ]
         missing: list[str] = []
         for name in surface:
             source = (ROOT / name).read_text(encoding="utf-8")
-            for literal in re.findall(rf'"({segment}*[一-鿿]{segment}*)"', source):
-                normalised = re.sub(r"\\\([^)]*\)", "%@", literal)
-                if normalised not in keys:
-                    missing.append(f"{name}: {normalised}")
-        self.assertEqual(missing, [], f"chat copy missing from catalog: {missing}")
+            for literal in swift_string_literals(source):
+                if not HAN.search(literal):
+                    continue
+                if canonical_copy(literal) not in keys:
+                    missing.append(f"{name}: {literal}")
+        self.assertEqual(missing, [], f"surface copy missing from catalog: {missing}")
 
     def test_schemas_close_security_boundaries(self) -> None:
         for path in CONTRACTS.glob("*.schema.json"):

@@ -114,6 +114,9 @@ struct VRMStageSurface: UIViewRepresentable {
         private var lastFrame: CFTimeInterval?
         private var reportedUnavailable = false
         private var hasLoggedMouth = false
+        /// Whether this Metal device can run the renderer's spring-bone kernels.
+        /// Decided once from the device, because the answer cannot change.
+        private var supportsSpringBone = false
         private var bounds: (min: SIMD3<Float>, max: SIMD3<Float>)?
 
         init(
@@ -132,6 +135,13 @@ struct VRMStageSurface: UIViewRepresentable {
                 return report(.noMetalDevice)
             }
             self.queue = queue
+            // Non-uniform threadgroups arrived with Apple4 (A11), so every real
+            // target device has them and the Simulator does not.
+            supportsSpringBone = device.supportsFamily(.apple4)
+            vrmLog.notice("""
+                vrm device: \(device.name, privacy: .public) \
+                springBone \(self.supportsSpringBone, privacy: .public)
+                """)
             loadTask = Task { [weak self] in
                 guard let self else { return }
                 do {
@@ -222,6 +232,24 @@ struct VRMStageSurface: UIViewRepresentable {
             // Frame zero before warmup: settling the springs against the bind
             // pose and then jumping to an animated frame snaps the hair.
             player.update(deltaTime: 0, model: model)
+
+            // Spring bones are a capability, not a given. Every spring-bone
+            // kernel in the renderer is issued with `dispatchThreads`, which
+            // requires non-uniform threadgroup support; the Simulator's Metal
+            // device declares none, so each of those dispatches is an invalid
+            // call there. With Metal API Validation on — Xcode's default for a
+            // Run — the first one aborts the process during warmup. It only
+            // looked fine from a plain `simctl launch`, where validation is off
+            // and the illegal call goes unchecked. The renderer has no gate of
+            // its own, so the host supplies one and says so rather than
+            // crashing or pretending.
+            guard supportsSpringBone else {
+                vrmLog.notice("""
+                    vrm spring bone unavailable: this Metal device has no \
+                    non-uniform threadgroups; animation plays without hair physics
+                    """)
+                return
+            }
             // Warmup runs the solver against that pose, so the springs do not
             // start cold and bounce on the first drawn frame.
             renderer.warmupPhysics(steps: 30)

@@ -170,6 +170,12 @@ struct ChatComposer: View {
     let isSending: Bool
     let placeholder: String
     let onSend: () -> Void
+    /// Push-to-talk. While listening the field shows what has been heard so far,
+    /// so the user can see the recogniser keeping up rather than trusting it.
+    var isListening: Bool = false
+    var partialSpeech: String = ""
+    var onVoiceStart: () -> Void = {}
+    var onVoiceEnd: () -> Void = {}
 
     private var canSend: Bool {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSending
@@ -177,9 +183,14 @@ struct ChatComposer: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            TextField(placeholder, text: $draft, axis: .vertical)
+            TextField(
+                isListening ? String(localized: "正在听……") : placeholder,
+                text: isListening ? .constant(partialSpeech) : $draft,
+                axis: .vertical
+            )
                 .lineLimit(1...5)
                 .textFieldStyle(.plain)
+                .disabled(isListening)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 11)
                 .background(.thinMaterial, in: Capsule())
@@ -196,7 +207,10 @@ struct ChatComposer: View {
                     .foregroundStyle(.white)
                     .buttonStyle(.plain)
             } else {
-                Button(String(localized: "按住说话"), systemImage: "mic.fill") {}
+                // Press and hold. A tap-to-toggle microphone leaves the user
+                // unsure whether it is still listening; holding makes the answer
+                // the position of their own thumb.
+                Label(String(localized: "按住说话"), systemImage: isListening ? "waveform" : "mic.fill")
                     .labelStyle(.iconOnly)
                     .font(.headline)
                     .frame(width: 44, height: 44)
@@ -205,10 +219,71 @@ struct ChatComposer: View {
                         in: Circle()
                     )
                     .foregroundStyle(isSending ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(Color.white))
-                    .buttonStyle(.plain)
-                    .disabled(true)
-                    .accessibilityHint(String(localized: "语音输入尚未启用"))
+                    .scaleEffect(isListening ? 1.18 : 1)
+                    .animation(.snappy(duration: 0.18), value: isListening)
+                    .contentShape(Circle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { _ in if !isSending, !isListening { onVoiceStart() } }
+                            .onEnded { _ in if isListening { onVoiceEnd() } }
+                    )
+                    .accessibilityLabel(String(localized: "按住说话"))
+                    .accessibilityHint(String(localized: "按住录音，松开把文字放进输入框"))
             }
         }
+    }
+}
+
+/// The one-turn journey attachment, shown before it is sent (`G2-J3B`).
+///
+/// This card is the whole consent surface: every field it prints is a field of
+/// the payload that will travel, at the payload's own resolution. It exists so
+/// that "explicit, inspectable attachment" in DEC-002 means the user can read
+/// the position being shared rather than trust a label saying one is attached.
+struct JourneyAttachmentCard: View {
+    let attachment: JourneyAttachment
+    let minutesRemaining: Int
+    let onRevoke: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Label(String(localized: "将随这条消息发送一次"), systemImage: "location.circle.fill")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.indigo)
+                Spacer()
+                Button(String(localized: "撤销"), role: .destructive, action: onRevoke)
+                    .font(.footnote.weight(.medium))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("路线：\(attachment.routeTitle)")
+                .font(.caption)
+                .foregroundStyle(.primary)
+            if let progress = attachment.progressLine {
+                Text(progress)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let position = attachment.positionLine {
+                Text(position)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            // Said plainly, because the coordinate above is rounded and a user
+            // reading three decimals deserves to know that is all there is.
+            Text("位置精度约 100 米，\(minutesRemaining) 分钟后过期")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.indigo.opacity(0.35), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
     }
 }

@@ -47,11 +47,27 @@ struct ChatStageView: View {
             stageMessage
                 .padding(.horizontal, 20)
 
+            // Directly above the composer, because it is a property of the
+            // message about to be written rather than of the screen.
+            if let attachment = model.pendingJourneyAttachment {
+                JourneyAttachmentCard(
+                    attachment: attachment,
+                    minutesRemaining: attachment.minutesRemaining(at: Date()),
+                    onRevoke: { model.revokeJourneyAttachment() }
+                )
+                .padding(.horizontal, 20)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
             ChatComposer(
                 draft: $model.chatDraft,
                 isSending: model.chatTurnState.isPending,
                 placeholder: String(localized: "给 \(characterName) 发消息"),
-                onSend: { model.sendChatMessage() }
+                onSend: { model.sendChatMessage() },
+                isListening: model.voiceInput.state.isListening,
+                partialSpeech: model.voiceHeardSoFar,
+                onVoiceStart: { Task { await model.beginVoiceInput() } },
+                onVoiceEnd: { model.finishVoiceInput() }
             )
             .padding(.horizontal, 20)
             .padding(.bottom, 78)
@@ -79,6 +95,22 @@ struct ChatStageView: View {
 
     /// One slot above the composer: the companion's line, or an honest status.
     @ViewBuilder private var stageMessage: some View {
+        // A voice-input problem outranks the turn status: the user just pressed
+        // the button and needs to know why nothing happened. Tapping it clears.
+        if let voiceMessage = model.voiceMessage {
+            StageStatusBanner(
+                message: voiceMessage,
+                hint: nil,
+                symbol: "mic.slash",
+                tint: .orange
+            )
+            .onTapGesture { model.voiceInput.acknowledge() }
+        } else {
+            turnMessage
+        }
+    }
+
+    @ViewBuilder private var turnMessage: some View {
         switch model.chatTurnState {
         case .idle:
             if let latest = model.latestCompanionLine {

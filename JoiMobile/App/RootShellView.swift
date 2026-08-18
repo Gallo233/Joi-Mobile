@@ -10,7 +10,7 @@ struct RootShellView: View {
                 case .chat:
                     ChatStageView(model: model)
                 case .map:
-                    MapExperienceView(characterName: model.currentCharacterName)
+                    MapExperienceView(characterName: model.currentCharacterName, model: model)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

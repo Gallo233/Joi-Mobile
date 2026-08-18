@@ -298,8 +298,25 @@ final class CharacterPackageInstallerTests: XCTestCase {
                 _ = try await installer.preview(.joiCharacterArchive(archive))
                 XCTFail("attack \(index) was accepted")
             } catch let failure as CharacterPackageImportFailure {
-                XCTAssertTrue([.unsafeArchive, .unsupportedArchiveProfile].contains(failure.code))
-                XCTAssertTrue([.preflight, .extract].contains(failure.phase))
+                // Attack 1 sets the data-descriptor flag. The restricted profile
+                // now admits that flag deliberately, because real writers set it,
+                // so this fixture no longer fails on the flag itself: it declares
+                // a trailing descriptor and then writes none, and the stream ends
+                // where the header did not promise. `malformedArchive` is the
+                // honest classification for an archive that contradicts itself —
+                // "outside the profile" would claim the shape is merely
+                // unsupported when it is actually broken.
+                let expected: Set<CharacterPackageImportCode> = index == 1
+                    ? [.malformedArchive]
+                    : [.unsafeArchive, .unsupportedArchiveProfile]
+                XCTAssertTrue(
+                    expected.contains(failure.code),
+                    "attack \(index) rejected with \(failure.code) at \(failure.phase)"
+                )
+                XCTAssertTrue(
+                    [.preflight, .extract].contains(failure.phase),
+                    "attack \(index) rejected at \(failure.phase)"
+                )
             } catch {
                 XCTFail("unexpected error \(error)")
             }
@@ -804,6 +821,34 @@ final class CharacterPackageInstallerTests: XCTestCase {
         await installer.releaseActivation(handle)
     }
 
+    /// The restricted profile admits the data-descriptor flag on purpose: a
+    /// streaming writer sets it because it cannot know the CRC or the size until
+    /// the payload is written, and refusing it made ordinary archives
+    /// unimportable. Only the rejection of a *self-contradictory* one was
+    /// covered, which proved nothing about the archives this widening exists to
+    /// admit — so this is the case that says the profile actually opened.
+    func testGenuineStreamingWrittenArchiveInstalls() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let archive = fixture.file("streamed.joi-character", storedZip([
+            .file("manifest.json", canonicalStaticManifest(), dataDescriptor: true),
+            .file("portrait.png", validPNG, dataDescriptor: true),
+        ]))
+        let installer = CharacterPackageInstaller(root: fixture.directory("store"))
+
+        let installed = try await installer.install(.joiCharacterArchive(archive))
+        XCTAssertNil(installed.disposition)
+        XCTAssertEqual(installed.manifest.characterID, "fixture.joi")
+
+        // The payload has to survive the placeholder header intact, not merely
+        // get past preflight: the real CRC and sizes live after the bytes.
+        let handle = try await installer.prepareActivation(installed.installationID)
+        let access = try await installer.contentAccess(for: handle)
+        let portrait = try Data(contentsOf: access.root.appendingPathComponent("portrait.png"))
+        XCTAssertEqual(portrait, validPNG)
+        await installer.releaseActivation(handle)
+    }
+
     // MARK: - DEC-024 — a VRM package declares its own motions
 
     /// A `.vrm` file carries no animation, so idle and greet are separate
@@ -1079,6 +1124,9 @@ private struct ZipEntry {
     var madeBy: UInt16 = 20
     var external: UInt32 = 0
     var extra = Data()
+    /// Writes the entry the way a streaming writer does: the local header holds
+    /// placeholder zeros and the real CRC and sizes trail the payload.
+    var dataDescriptor = false
 
     static func file(
         _ name: String,
@@ -1087,9 +1135,19 @@ private struct ZipEntry {
         method: UInt16 = 0,
         madeBy: UInt16 = 20,
         external: UInt32 = 0,
-        extra: Data = Data()
+        extra: Data = Data(),
+        dataDescriptor: Bool = false
     ) -> ZipEntry {
-        .init(name: name, body: body, flags: flags, method: method, madeBy: madeBy, external: external, extra: extra)
+        .init(
+            name: name,
+            body: body,
+            flags: dataDescriptor ? flags | 0x0008 : flags,
+            method: method,
+            madeBy: madeBy,
+            external: external,
+            extra: extra,
+            dataDescriptor: dataDescriptor
+        )
     }
 }
 
@@ -1101,14 +1159,22 @@ private func storedZip(_ entries: [ZipEntry]) -> Data {
         let name = Data(entry.name.utf8)
         let crc = crc32(entry.body)
         let size = UInt32(entry.body.count)
+        // A streaming writer does not know the CRC or the size when it writes the
+        // local header, so it writes zeros there and appends the real values
+        // after the payload. The central directory always carries the truth.
+        let localCRC = entry.dataDescriptor ? 0 : crc
+        let localSize = entry.dataDescriptor ? 0 : size
         output.u32(0x0403_4b50); output.u16(20); output.u16(entry.flags); output.u16(entry.method)
-        output.u16(0); output.u16(0); output.u32(crc); output.u32(size); output.u32(size)
+        output.u16(0); output.u16(0); output.u32(localCRC); output.u32(localSize); output.u32(localSize)
         output.u16(UInt16(name.count)); output.u16(UInt16(entry.extra.count)); output.append(name); output.append(entry.extra); output.append(entry.body)
+        if entry.dataDescriptor {
+            output.u32(0x0807_4b50); output.u32(crc); output.u32(size); output.u32(size)
+        }
         central.u32(0x0201_4b50); central.u16(entry.madeBy); central.u16(20); central.u16(entry.flags); central.u16(entry.method)
         central.u16(0); central.u16(0); central.u32(crc); central.u32(size); central.u32(size)
         central.u16(UInt16(name.count)); central.u16(UInt16(entry.extra.count)); central.u16(0); central.u16(0); central.u16(0)
         central.u32(entry.external); central.u32(offset); central.append(name); central.append(entry.extra)
-        offset += UInt32(30 + name.count + entry.extra.count + entry.body.count)
+        offset += UInt32(30 + name.count + entry.extra.count + entry.body.count + (entry.dataDescriptor ? 16 : 0))
     }
     let centralOffset = offset
     output.append(central)

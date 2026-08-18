@@ -34,22 +34,12 @@ final class SpeechPlayer: LipSyncAmplitudeSource {
     @ObservationIgnored private let endpoint: URL
     @ObservationIgnored private let session: URLSession
 
-    /// Smoothed so the mouth does not chatter on per-frame amplitude noise.
-    @ObservationIgnored private var smoothed: Float = 0
+    /// Mouth shape lives in its own value type so its rules can be tested
+    /// without audio hardware; see `MouthOpening` and `G2-J2B`.
+    @ObservationIgnored private var mouth = MouthOpening()
     @ObservationIgnored private var peakAmplitude: Float = 0
     @ObservationIgnored private var lastPoll: CFTimeInterval?
     @ObservationIgnored private var sessionActivated = false
-
-    /// Level below which the character is treated as silent, in dBFS. Synthesised
-    /// speech sits well above this between syllables, so a lower floor would hold
-    /// the mouth open through the gaps.
-    private static let silenceFloor: Float = -45
-    /// A mouth reaches its opening quickly and closes more slowly. Symmetric
-    /// smoothing either chatters on syllable edges or hangs open at the end of a
-    /// line; these are seconds, not per-frame factors, so the result does not
-    /// change when the stage drops below 60 fps.
-    private static let attackSeconds: Float = 0.035
-    private static let releaseSeconds: Float = 0.09
 
     init(endpoint: URL, session: URLSession = .shared) {
         self.endpoint = endpoint
@@ -62,35 +52,20 @@ final class SpeechPlayer: LipSyncAmplitudeSource {
         // one enormous step that snaps the mouth.
         let elapsed = Float(min(max(now - (lastPoll ?? now), 0), 0.1))
         lastPoll = now
-        guard let player, player.isPlaying else {
-            // Released rather than cut, so the mouth closes the same way it does
-            // between syllables instead of snapping shut at the end of a line.
-            smoothed = ease(smoothed, towards: 0, seconds: Self.releaseSeconds, elapsed: elapsed)
-            return smoothed
+        // averagePower is dBFS: -160 is silence, 0 is full scale. Nothing playing
+        // is `nil`, which releases the mouth rather than cutting it shut.
+        let level: Float?
+        if let player, player.isPlaying {
+            player.updateMeters()
+            level = player.averagePower(forChannel: 0)
+        } else {
+            level = nil
         }
-        player.updateMeters()
-        // averagePower is dBFS: -160 is silence, 0 is full scale. dB is already a
-        // perceptual scale, so opening maps linearly across it from the floor.
-        let decibels = player.averagePower(forChannel: 0)
-        let floor = Self.silenceFloor
-        let target = min(max((decibels - floor) / -floor, 0), 1)
-        smoothed = ease(
-            smoothed,
-            towards: target,
-            seconds: target > smoothed ? Self.attackSeconds : Self.releaseSeconds,
-            elapsed: elapsed
-        )
+        let opening = mouth.advance(levelDecibels: level, elapsed: elapsed)
         // Peak is reported once when playback ends: a mouth that never opened is
         // otherwise indistinguishable from audio that played silently.
-        peakAmplitude = max(peakAmplitude, smoothed)
-        return smoothed
-    }
-
-    /// Exponential approach with a real time constant, so the shape of the motion
-    /// is set by seconds rather than by how often a renderer happens to ask.
-    private func ease(_ value: Float, towards target: Float, seconds: Float, elapsed: Float) -> Float {
-        guard seconds > 0, elapsed > 0 else { return target }
-        return value + (target - value) * (1 - exp(-elapsed / seconds))
+        peakAmplitude = max(peakAmplitude, opening)
+        return opening
     }
 
     /// Speaks `line`. Any line already playing is replaced, because a newer
@@ -188,7 +163,7 @@ final class SpeechPlayer: LipSyncAmplitudeSource {
     private func finishPlayback() {
         speechLog.notice("speech finished: peak mouth amplitude \(self.peakAmplitude, privacy: .public)")
         player = nil
-        // `smoothed` is deliberately left alone: with no player, the next poll
+        // The mouth is deliberately left alone: with no player, the next poll
         // releases it to zero over the same time constant the gaps between
         // syllables use, so a line ends with a mouth that closes rather than one
         // that snaps shut on the last frame.

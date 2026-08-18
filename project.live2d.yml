@@ -15,6 +15,13 @@ targets:
       - path: JoiMobile
       - path: Live2D
         name: Live2DBridge
+        # The bridge includes Cubism's headers, and their doc comments name
+        # parameters the declarations do not have. Those warnings are reported at
+        # the vendor header but emitted while compiling *our* file, so silencing
+        # the vendor source group does not reach them. Only this one lint is
+        # disabled — every other warning in the bridge still fails loudly.
+        compilerFlags:
+          - -Wno-documentation
       # Only the Metal renderer survives Tools/setup_live2d.sh, so the whole
       # Framework source tree can be compiled as-is.
       - path: Vendor/Live2D/Framework/src
@@ -22,8 +29,15 @@ targets:
         # Cubism's Metal renderer is written for manual reference counting and
         # sends -retain/-release/-autorelease explicitly, so it cannot be
         # compiled under ARC. Our own bridge in Live2D/ keeps ARC.
+        #
+        # `-w` silences this tree only. The SDK is pinned, unmodifiable and not
+        # ours to correct, and its ~60 warnings were burying the warning count
+        # for code we can actually act on: without this, a real warning in
+        # JoiMobile/ or Live2D/ arrives as number 61 and nobody sees it. Our own
+        # sources keep every warning they had.
         compilerFlags:
           - -fno-objc-arc
+          - -w
         excludes:
           - "**/CMakeLists.txt"
           - "**/*.metal"
