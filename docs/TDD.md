@@ -762,6 +762,45 @@ observes the connection, so the app cannot enter a degraded mode *before* a turn
 stalls, and Chat has no cached answer to fall back to — the cached walk is the
 only offline content this product has, and it is on the other surface.
 
+### 6.19 G2-J5D — Arrive-and-tell over a cached tour
+
+`G2-J5D` gives `JM-P0-009` an implementation. The place database it needs turned
+out to already exist: a travel pack declares what its places are and where they
+sit, so arrive-and-tell over a downloaded route needs no external gazetteer and
+no network. The three slices before this one built that data without it being
+the goal.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J5D-01` | Location, accuracy and the route's own stops combine into a proposal; being between stops is a normal state, not a failure | OfflinePack / `PlaceResolver.propose` | `PlaceResolverTests` |
+| `J5D-02` | A worse fix may only ever make the answer *less* certain. Accuracy widens the candidate search and lowers confidence at the same time, so a vague reading surfaces more candidates and asserts none | OfflinePack / `PlaceResolver.confidence` | monotonicity test |
+| `J5D-03` | `FAIL-017`: an identity that is weak, or that a second stop explains nearly as well, cancels auto-confirm and keeps its full candidate set | OfflinePack / `PlaceProposal.ambiguous` | ambiguity and poor-fix tests |
+| `J5D-04` | A confident proposal settles itself; an ambiguous one waits for the user | App / `AppModel.advancePlace` | `ArriveAndTellTests` |
+| `J5D-05` | `FAIL-018`: a correction applies locally and immediately, and later readings that disagree with it do not undo it. An automatic confirmation *is* retired by walking away | App / `AppModel.confirmPlace`, `ConfirmedPlace` | correction-durability tests |
+| `J5D-06` | Narration is the stop's cached text, labelled as cached and as fact-or-reflection — the same distinction the recap makes | App / `AppModel.placeNarration` | narration tests |
+| `J5D-07` | All visible copy lives in the editable `zh-Hans` catalog | App / `Localizable.xcstrings` | surface-copy guard |
+
+**A correction and an automatic confirmation are not equally durable, and
+treating them alike was a real bug.** An automatic confirmation is the product's
+own reading, so a later reading may retire it. A correction is the user
+overriding those readings — usually *because* they are wrong — so readings
+repeating the same wrong thing must not undo it. `FAIL-018` says it plainly:
+cancel the wait, never revert the override. Only the user, or the end of the
+walk, clears a correction.
+
+**The first confidence formula was inverted and a property test caught it.**
+Confidence divided distance by a radius that *grew* with accuracy, so a worse fix
+produced a *more* confident answer — precisely the auto-confirm-the-wrong-place
+behaviour `FAIL-017` exists to prevent. It now falls with both distance and
+accuracy, and the monotonicity test that found it is the acceptance for
+`J5D-02`.
+
+`JM-P0-009` is **partial**. This resolves places on a cached route and nothing
+else: there is no online place lookup, no arbitrary nearby search, and no
+freshness beyond "this came with the pack". `FAIL-018` is partial too, for a
+reason worth stating — a correction has nothing to be submitted *to*, so there is
+no remote case, no acknowledgement and no pending status.
+
 ## 7. Map, navigation and offline PoC
 
 - Wrap MapLibre Native in `MapSurfaceProvider`; it renders online styles and verified downloaded corridor resources but never owns route truth.
@@ -905,7 +944,7 @@ The first slice is complete when traceability, XcodeGen generation, generic simu
 | JM-P0-006 | Cross-surface continuity | CompanionCore, App | `CompanionSessionStore`, `JourneyContextSnapshot`, `JourneyUseReceiptV1` | `JourneyConsentTests`, `JourneyAttachmentTests` | G1/G3 |
 | JM-P0-007 | Speech coordination | CompanionCore, App | `SpeechCoordinator`, `MouthOpening` | `SpeechCoordinationTests`, `MouthOpeningTests` | G2/G4 |
 | JM-P0-008 | Persistent Map experience | MapFeature, App | `JourneyContextStore`, drawer state | `MapExperienceStateTests`, `CachedWalkTests` | G2/G4 |
-| JM-P0-009 | Arrive-and-tell | MapFeature | place resolver, `JourneyContextSnapshot` | **not implemented** — no place resolver exists; GPS field script remains G4 | G2/G4 |
+| JM-P0-009 | Arrive-and-tell | OfflinePack, App | `PlaceResolver`, `PlaceProposal`, `ConfirmedPlace` | `PlaceResolverTests`, `ArriveAndTellTests`; **partial** — cached-route places only, no online lookup; GPS field script remains G4 | G2/G4 |
 | JM-P0-010 | See-and-ask | MapFeature, Backend | vision upload contract | **not implemented** — no capture or recognition path exists | G3/G4 |
 | JM-P0-011 | Cultural walking navigation | MapFeature, Backend | `NavigationProvider`, route API | `RouteProgressEngineTests`, `CachedWalkTests`; **no Ferrostar integration**, outdoor walk remains G4 | G2/G4 |
 | JM-P0-012 | Routes-as-narrative | OfflinePack, App | `RouteStop`, `RouteNarrative`, `RecapEntry` | `RouteNarrativeTests`, `RouteStoryTests` | G2 |

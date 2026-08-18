@@ -132,6 +132,15 @@ final class AppModel {
     private(set) var furthestWalkProgress: Double = 0
     var isRecapPresented = false
 
+    /// What the last reading says about which stop the walker is at
+    /// (`G2-J5D`), and what they have settled on.
+    ///
+    /// A proposal is never itself an answer: only `.confident` may settle
+    /// without asking, and an ambiguous one waits for a tap. `FAIL-017`'s rule
+    /// is that auto-confirm is cancelled, not that the candidates are hidden.
+    private(set) var placeProposal: PlaceProposal = .betweenStops
+    private(set) var confirmedPlace: ConfirmedPlace?
+
     /// The journey fact the user has offered to the conversation but not yet
     /// sent (`G2-J3B`). It is the preview and the payload at once, so what is
     /// shown is what travels. `nil` means the conversation carries no location.
@@ -335,9 +344,69 @@ final class AppModel {
         }
         walkObservation = observed
         furthestWalkProgress = max(furthestWalkProgress, observed.navigationObservation.candidateProgress)
+        advancePlace(with: location)
         Task { [journeyContext] in
             await journeyContext.reduce(observed.navigationObservation)
         }
+    }
+
+    // MARK: - Arrive-and-tell (`G2-J5D`)
+
+    /// Re-proposes a place from the newest reading, and settles it only when the
+    /// proposal is unambiguous.
+    ///
+    /// A correction and an automatic confirmation are not equally durable, and
+    /// conflating them was a real bug here.
+    ///
+    /// An automatic confirmation is the product's own reading, so a later
+    /// reading may retire it: staying confirmed somewhere the walker has left is
+    /// worse than saying nothing. A **correction** is the user overriding that
+    /// reading — usually *because* the readings are wrong — so later readings
+    /// saying the same wrong thing must not undo it. `FAIL-018` puts it plainly:
+    /// cancel the wait, never revert the override. Only the user, or the end of
+    /// the walk, clears a correction.
+    private func advancePlace(with location: LocationObservation) {
+        let resolver = PlaceResolver(stops: walk.narrative.stops.map(\.stop))
+        let proposal = resolver.propose(location)
+        placeProposal = proposal
+
+        if let confirmed = confirmedPlace {
+            guard !confirmed.wasCorrected else { return }
+            let stillHere = proposal.candidates.contains { $0.stop.stopID == confirmed.stop.stopID }
+            if !stillHere { confirmedPlace = nil }
+            return
+        }
+        // Only a confident proposal settles itself. `FAIL-017`: an ambiguous
+        // identity cancels auto-confirm and keeps its candidates.
+        if case let .confident(candidate) = proposal {
+            confirmedPlace = .confirmed(candidate.stop)
+        }
+    }
+
+    /// The user's answer to an ambiguous proposal, or a correction of any
+    /// proposal. Authoritative immediately and locally (`FAIL-018`).
+    func confirmPlace(_ stop: RouteStop) {
+        let wasProposed: Bool
+        if case let .confident(candidate) = placeProposal {
+            wasProposed = candidate.stop.stopID == stop.stopID
+        } else {
+            wasProposed = false
+        }
+        confirmedPlace = wasProposed ? .confirmed(stop) : .corrected(stop)
+    }
+
+    /// Clears the settled place without clearing the candidates, so the user can
+    /// think again rather than start again.
+    func clearConfirmedPlace() { confirmedPlace = nil }
+
+    /// The narration for the place the walker has settled on.
+    ///
+    /// Cached content, and labelled as such: it travelled with the pack and was
+    /// not fetched for this moment. `JM-P0-009` asks for honest online-or-cached
+    /// status, and this product has only the cached kind.
+    var placeNarration: (text: String, isFactual: Bool)? {
+        guard let stop = confirmedPlace?.stop else { return nil }
+        return (stop.narration, stop.isFactual)
     }
 
     /// Where the walk has got to in the story it is telling.

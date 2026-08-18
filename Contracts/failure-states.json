@@ -175,19 +175,24 @@
       "id": "FAIL-017",
       "state": "placeAmbiguous",
       "cancellation": "Cancel auto-confirm; preserve candidate set until choice/clear",
-      "status": "absent",
-      "owner": "MapFeature",
-      "evidence": [],
-      "gap": "No place resolver exists, so no identity can be ambiguous."
+      "status": "implemented",
+      "owner": "OfflinePack, App",
+      "evidence": [
+        "PlaceResolverTests",
+        "ArriveAndTellTests"
+      ]
     },
     {
       "id": "FAIL-018",
       "state": "placeCorrectionPending",
       "cancellation": "Cancel remote wait without reverting local session override",
-      "status": "absent",
-      "owner": "MapFeature",
-      "evidence": [],
-      "gap": "No place identity and no correction submission exist."
+      "status": "partial",
+      "owner": "OfflinePack, App",
+      "evidence": [
+        "PlaceResolverTests",
+        "ArriveAndTellTests"
+      ],
+      "gap": "A correction applies locally and immediately and survives later readings that disagree with it, which is the half that protects the user. There is nothing to submit it to: no place service exists, so there is no remote case, no acknowledgement and therefore no pending status to show."
     },
     {
       "id": "FAIL-019",

@@ -92,8 +92,21 @@ STATUS: dict[str, tuple[str, str, list[str], str]] = {
         "examined. Choosing an accuracy ceiling and a staleness window needs field evidence "
         "(G4), so neither is invented here.",
     ),
-    "FAIL-017": ("absent", "MapFeature", [], "No place resolver exists, so no identity can be ambiguous."),
-    "FAIL-018": ("absent", "MapFeature", [], "No place identity and no correction submission exist."),
+    "FAIL-017": (
+        "implemented",
+        "OfflinePack, App",
+        ["PlaceResolverTests", "ArriveAndTellTests"],
+        "",
+    ),
+    "FAIL-018": (
+        "partial",
+        "OfflinePack, App",
+        ["PlaceResolverTests", "ArriveAndTellTests"],
+        "A correction applies locally and immediately and survives later readings that disagree "
+        "with it, which is the half that protects the user. There is nothing to submit it to: no "
+        "place service exists, so there is no remote case, no acknowledgement and therefore no "
+        "pending status to show.",
+    ),
     "FAIL-019": ("absent", "MapFeature", [], "No camera capture path exists."),
     "FAIL-020": ("absent", "MapFeature", [], "No photo selection path exists."),
     "FAIL-021": ("absent", "MapFeature, Backend", [], "No visual recognition exists."),

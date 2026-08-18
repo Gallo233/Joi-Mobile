@@ -52,6 +52,12 @@ struct MapExperienceView: View {
                     RouteStoryStrip(state: model.narrativeState)
                 }
 
+                // Arrive-and-tell (`G2-J5D`): what the walker is standing at,
+                // asked rather than asserted when the fix cannot single it out.
+                if model.isWalking {
+                    ArriveAndTellPanel(model: model)
+                }
+
                 if let guidance = model.walkGuidance {
                     Label(guidance, systemImage: model.walkObservation?.arrived == true
                         ? "flag.checkered"
@@ -345,5 +351,73 @@ struct RouteRecapView: View {
                 }
             }
         }
+    }
+}
+
+/// Where the walker is, and what the route says about it.
+///
+/// `JM-P0-009`. A confident proposal is stated; an ambiguous one asks, showing
+/// every candidate with its distance and identity confidence so the choice is
+/// informed rather than a guess between two names. Narration is labelled as
+/// cached, because that is the only kind this product has.
+private struct ArriveAndTellPanel: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let confirmed = model.confirmedPlace {
+                HStack(spacing: 6) {
+                    Label(confirmed.stop.name, systemImage: "mappin.circle.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.teal)
+                    if confirmed.wasCorrected {
+                        Text("已更正")
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(.thinMaterial, in: Capsule())
+                    }
+                    Spacer()
+                    Button(String(localized: "不是这里")) { model.clearConfirmedPlace() }
+                        .font(.caption)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                }
+                if let narration = model.placeNarration {
+                    Text(narration.text)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(narration.isFactual
+                        ? String(localized: "随路线包缓存的资料，未联网核对。")
+                        : String(localized: "这是角色的感想，不是有来源的说法。"))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            } else if model.placeProposal.needsConfirmation {
+                Text("你在哪一站？")
+                    .font(.subheadline.weight(.semibold))
+                Text("定位不够准，无法确定。选一个，或者继续走。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                ForEach(model.placeProposal.candidates, id: \.stop.stopID) { candidate in
+                    Button {
+                        model.confirmPlace(candidate.stop)
+                    } label: {
+                        HStack {
+                            Text(candidate.stop.name).font(.footnote)
+                            Spacer()
+                            Text("约 \(Int(candidate.distanceMeters.rounded())) 米")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 3)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
     }
 }
