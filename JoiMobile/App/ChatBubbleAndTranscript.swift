@@ -84,6 +84,9 @@ struct TranscriptDrawer: View {
     /// user asks for it (`G2-J2D`).
     var canRemember: (TranscriptEntry) -> Bool = { _ in false }
     var onRemember: (TranscriptEntry) -> Void = { _ in }
+    /// What stands behind each answer, and how to open it (`G2-J3C`).
+    var claimSupport: (TranscriptEntry) -> ClaimSupport = { _ in .unsourced }
+    var onOpenSources: (TranscriptEntry) -> Void = { _ in }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -117,7 +120,14 @@ struct TranscriptDrawer: View {
                                 TranscriptRow(
                                     entry: entry,
                                     characterName: characterName,
-                                    onRemember: canRemember(entry) ? { onRemember(entry) } : nil
+                                    onRemember: canRemember(entry) ? { onRemember(entry) } : nil,
+                                    onOpenSources: claimSupport(entry) == .unsourced
+                                        ? nil
+                                        : { onOpenSources(entry) },
+                                    sourcesWithheld: {
+                                        if case .withheld = claimSupport(entry) { return true }
+                                        return false
+                                    }()
                                 )
                                 .id(entry.eventID)
                             }
@@ -146,6 +156,13 @@ private struct TranscriptRow: View {
     /// than disabled: eligibility is the backend's answer, and a greyed-out
     /// button invites the user to argue with a decision the app does not own.
     var onRemember: (() -> Void)?
+    /// `nil` when this answer carried no sources at all. An unsourced line has
+    /// nothing to open, and offering an empty list would imply otherwise.
+    var onOpenSources: (() -> Void)?
+    /// True when the answer arrived with citations and none of them may stand.
+    /// Marked on the line itself rather than only inside the sheet, because a
+    /// reader who never opens it still needs to know.
+    var sourcesWithheld: Bool = false
 
     private var isUser: Bool { entry.author == .user }
 
@@ -162,6 +179,22 @@ private struct TranscriptRow: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(.indigo)
                         .accessibilityLabel(String(localized: "记住这句话"))
+                }
+                if let onOpenSources {
+                    Button(
+                        String(localized: "查看来源"),
+                        systemImage: sourcesWithheld ? "exclamationmark.triangle.fill" : "text.book.closed",
+                        action: onOpenSources
+                    )
+                    .labelStyle(.iconOnly)
+                    .font(.caption)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(sourcesWithheld ? .orange : .teal)
+                    .accessibilityLabel(
+                        sourcesWithheld
+                            ? String(localized: "这条说法没有可用来源")
+                            : String(localized: "查看来源")
+                    )
                 }
             }
             Text(entry.text)

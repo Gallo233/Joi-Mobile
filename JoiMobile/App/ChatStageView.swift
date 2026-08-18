@@ -38,6 +38,9 @@ struct ChatStageView: View {
         .sheet(isPresented: Binding(get: { model.isMemoryListPresented }, set: { if !$0 { model.dismissMemoryList() } })) {
             MemoryListView(model: model)
         }
+        .sheet(item: Binding(get: { model.inspectedSources }, set: { if $0 == nil { model.dismissSources() } })) { inspected in
+            SourceListView(inspected: inspected, onClose: { model.dismissSources() })
+        }
     }
 
     private var chrome: some View {
@@ -169,7 +172,9 @@ struct ChatStageView: View {
                 characterName: characterName,
                 onClose: { model.dismissTranscript() },
                 canRemember: { model.canRemember($0) },
-                onRemember: { entry in Task { await model.proposeMemory(from: entry) } }
+                onRemember: { entry in Task { await model.proposeMemory(from: entry) } },
+                claimSupport: { model.claimSupport(for: $0) },
+                onOpenSources: { model.inspectSources(for: $0) }
             )
             .frame(maxWidth: 330)
             .transition(.move(edge: .trailing))

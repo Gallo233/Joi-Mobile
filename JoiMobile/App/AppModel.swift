@@ -127,6 +127,18 @@ final class AppModel {
     var isMemoryListPresented = false
     @ObservationIgnored private let memoryStore: any MemoryRepository
 
+    /// Sources carried by each accepted event (`G2-J3C`).
+    ///
+    /// Held here rather than on `TranscriptEntry`, which is a frozen contract
+    /// mirrored by the Kotlin core, covered by conformance vectors and encoded
+    /// into the session schema. Nothing yet needs sources to survive a session
+    /// reload, so this is an App projection of events the App already sees —
+    /// the same shape as `chatTranscript` itself. Widening the contract is the
+    /// right move when persistence needs it, and should be its own decision.
+    @ObservationIgnored private var sourcesByEventID: [String: [SourceProjectionV1]] = [:]
+    /// The answer whose sources are being read, if any.
+    var inspectedSources: InspectedSources?
+
     private let installer: CharacterPackageInstaller
     private let renderer: any CharacterRenderer
     private let chatController: ChatSessionController
@@ -390,6 +402,25 @@ final class AppModel {
 
     func dismissMemoryList() { isMemoryListPresented = false }
 
+    // MARK: - Trusted sources (`G2-J3C`)
+
+    /// What this line's sources permit it to claim. The verdict is
+    /// `SourceEligibility`'s, not the view's, so a second client reaches the
+    /// same answer from the same event.
+    func claimSupport(for entry: TranscriptEntry) -> ClaimSupport {
+        SourceEligibility.support(for: sourcesByEventID[entry.eventID] ?? [])
+    }
+
+    /// Opens the sources behind one answer. An unsourced line has nothing to
+    /// open, which is why the control is absent rather than empty.
+    func inspectSources(for entry: TranscriptEntry) {
+        let support = claimSupport(for: entry)
+        guard support != .unsourced else { return }
+        inspectedSources = InspectedSources(eventID: entry.eventID, support: support)
+    }
+
+    func dismissSources() { inspectedSources = nil }
+
     /// Eight-point compass, because a bearing in degrees is not walkable.
     static func compass(_ degrees: Double) -> String {
         let points = [
@@ -615,6 +646,11 @@ final class AppModel {
             case let .append(entry):
                 if await companionSession.appendAccepted(entry, threadID: threadID) {
                     chatTranscript.append(entry)
+                    // Recorded only for an accepted line, so a cancelled or
+                    // superseded answer leaves no citation behind.
+                    if !event.sources.isEmpty {
+                        sourcesByEventID[entry.eventID] = event.sources
+                    }
                     // Speech follows acceptance, never a draft: a line that was
                     // superseded or cancelled must never be spoken. The spoken
                     // language differs from the displayed text, so only an

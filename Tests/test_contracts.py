@@ -209,6 +209,8 @@ class ContractArtifactTests(unittest.TestCase):
             # G2-J2D memory proposal, list and category labels.
             "JoiMobile/App/MemoryViews.swift",
             "JoiMobile/App/MemoryProposal.swift",
+            # G2-J3C source projection copy.
+            "JoiMobile/App/SourceViews.swift",
         ]
         missing: list[str] = []
         for name in surface:

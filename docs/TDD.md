@@ -515,6 +515,45 @@ proposal's content would have to be invented here; what exists instead is a
 user-initiated proposal that eligibility gates. A backend that proposes content
 needs a contract field first.
 
+### 6.12 G2-J3C — Sources, or say so
+
+`G2-J3C` gives `JM-P0-013` a rule and a surface. `SourceProjectionV1` has been
+part of `CompanionEventV1` since G1, is a **required** field in
+`Contracts/companion-event-v1.schema.json`, is decoded by `SSEChatGateway`, is
+mirrored in the Kotlin core's `CompanionEvent.kt`, and has a populated fixture in
+`Contracts/fixtures/companion-event.valid.json` — and no code on either platform
+had ever read one.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J3C-01` | A withdrawn revision or a retracted claim can never support an answer, whatever confidence it declares; evidence below the support floor does not support it either | CompanionCore / `SourceEligibility.ineligibility` | `SourceEligibilityTests` |
+| `J3C-02` | The four values stay separate. Low identity confidence or weak authority does not remove support, and nothing anywhere adds or averages them into one score | CompanionCore / `SourceEligibility` | separation tests |
+| `J3C-03` | A conflict is preserved and marked rather than resolved by dropping the source; an applied or pending correction is a note, not a refusal | CompanionCore / `SourceProjectionV1.isConflicted`, `hasCorrectionNote` | conflict and correction tests |
+| `J3C-04` | Carrying no sources and carrying only refused ones are different states, and the second says so — a retracted claim must not read as ordinary conversation | CompanionCore / `ClaimSupport` | withheld-vs-unsourced tests |
+| `J3C-05` | Every shown source carries its publisher, locator, revision, retrieval time and rights, because G5 attribution is unauditable if the UI hides it | App / `SourceListView` | copy review |
+| `J3C-06` | Sources are recorded on acceptance, not arrival: an event `CompanionSessionStore` refuses leaves no citation, and an unsourced line offers no control to open | App / `AppModel.claimSupport`, `inspectSources` | `SourceProjectionTests` |
+| `J3C-07` | Nothing in the App invents a citation. An answer's support comes from its event or does not exist | App / `AppModel` | fabrication test |
+| `J3C-08` | All visible source copy lives in the editable `zh-Hans` catalog | App / `Localizable.xcstrings` | surface-copy guard |
+
+The support floor is the one place in this rule where a number becomes a
+decision, and it applies to `claimSupportConfidence` alone. Identity confidence
+answers "what is this?", authority answers "who says it?", and PRD §8.1 requires
+those to stay separate values — so the rule reads them, shows them, and never
+combines them.
+
+Sources are held as an App projection keyed by `eventID` rather than added to
+`TranscriptEntry`. That type is a frozen contract mirrored by the Kotlin core and
+encoded into the session schema, nothing yet needs citations to survive a session
+reload, and widening it should be its own decision rather than a side effect of
+this slice.
+
+**No backend produces sources yet.** Both `Backend/mock_server.py` and
+`Backend/proxy_server.py` return `"sources": []`, so the rule and the rendering
+are proven by tests and fixtures, not by a live turn. This slice therefore moves
+`JM-P0-013` from unimplemented to **partial**: the eligibility rule, the
+withheld state and the projection exist and are enforced; a producer, place
+identity and cached-narration freshness do not.
+
 ## 7. Map, navigation and offline PoC
 
 - Wrap MapLibre Native in `MapSurfaceProvider`; it renders online styles and verified downloaded corridor resources but never owns route truth.
@@ -662,7 +701,7 @@ The first slice is complete when traceability, XcodeGen generation, generic simu
 | JM-P0-010 | See-and-ask | MapFeature, Backend | vision upload contract | **not implemented** — no capture or recognition path exists | G3/G4 |
 | JM-P0-011 | Cultural walking navigation | MapFeature, Backend | `NavigationProvider`, route API | `RouteProgressEngineTests`, `CachedWalkTests`; **no Ferrostar integration**, outdoor walk remains G4 | G2/G4 |
 | JM-P0-012 | Routes-as-narrative | MapFeature, OfflinePack | `TravelPackManifestV1`, narrative state | **not implemented** — no stops, pacing or recap exist | G2 |
-| JM-P0-013 | Trusted sources | CompanionCore, MapFeature | `SourceProjectionV1` in `CompanionEventV1` | **not implemented** — the contract is parsed, nothing renders or gates on it | G2/G3 |
+| JM-P0-013 | Trusted sources | CompanionCore, MapFeature, App | `SourceProjectionV1`, `SourceEligibility`, `ClaimSupport` | `SourceEligibilityTests`, `SourceProjectionTests`; **partial** — no backend produces sources yet | G2/G3 |
 | JM-P0-014 | Offline travel pack | OfflinePack, MapFeature | `TravelPackManifestV1`, cached navigation | `OfflinePackVerifierTests`, `RouteProgressEngineTests`; **no pack import**, flight-mode walk remains G4 | G2/G4/G5 |
 | JM-P0-015 | Character library/import | CharacterRuntime, App | `CharacterPackageManifestV1`, `CharacterMotionV1` | `CharacterPackageInstallerTests`, `CharacterPackageValidatorTests` | G2/G3/G5 |
 | JM-P0-016 | Native renderer parity | CharacterRuntime | `CharacterRenderer`, compatibility receipt, `CharacterContentAccess.motions` | `Live2DNativeAdapterTests`, `VRMNativeAdapterTests`; device matrix remains G4 | G4/G5 |
