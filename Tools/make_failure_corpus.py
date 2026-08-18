@@ -106,13 +106,21 @@ STATUS: dict[str, tuple[str, str, list[str], str]] = {
         "Transport failure and cancellation are typed and preserve accepted state, but there is "
         "no distinct degraded-network mode and no cached-versus-online presentation.",
     ),
-    "FAIL-025": ("absent", "OfflinePack", [], "No travel pack import exists, so no pack asset can be missing."),
+    "FAIL-025": (
+        "implemented",
+        "OfflinePack, App",
+        ["TravelPackInstallerTests", "TravelPackImportTests"],
+        "",
+    ),
     "FAIL-026": (
         "partial",
-        "OfflinePack",
-        ["OfflinePackVerifierTests"],
-        "Manifest and hash verification exist and refuse an invalid pack; atomic activation, "
-        "quarantine and a last-valid pointer do not, because nothing installs packs yet.",
+        "OfflinePack, App",
+        ["OfflinePackVerifierTests", "TravelPackInstallerTests", "TravelPackImportTests"],
+        "Schema, rights, expiry, per-file hashes, undeclared content and traversal are all "
+        "refused, the candidate is sealed only after every check passes, and a refusal leaves "
+        "the installed pack untouched. What is missing is a signature: self-declared hashes "
+        "prove integrity, not publisher authenticity, so no pack can yet be attributed to "
+        "anyone (the same gap DEC-010 records for character packages).",
     ),
     "FAIL-027": (
         "implemented",

@@ -1,6 +1,7 @@
 import CompanionCore
 import OfflinePack
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The Map surface: one cached cultural walk, how far along it you are, and the
 /// way back when you leave it.
@@ -11,7 +12,8 @@ import SwiftUI
 /// the route's own shape keeps the promise exactly and claims nothing else.
 struct MapExperienceView: View {
     let characterName: String
-    let model: AppModel
+    @Bindable var model: AppModel
+    @State private var isImportingPack = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -59,6 +61,14 @@ struct MapExperienceView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
+                if let message = model.packImportMessage {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .onTapGesture { model.acknowledgePackMessage() }
+                }
+
                 if let availability = availabilityMessage {
                     Text(availability)
                         .font(.footnote)
@@ -86,6 +96,13 @@ struct MapExperienceView: View {
                         .buttonStyle(.bordered)
                         .tint(.indigo)
                     }
+                    if !model.isWalking {
+                        Button(String(localized: "导入路线包"), systemImage: "square.and.arrow.down") {
+                            isImportingPack = true
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.secondary)
+                    }
                     Button(model.isWalking ? String(localized: "结束步行") : String(localized: "开始步行")) {
                         if model.isWalking { model.stopWalk() } else { model.startWalk() }
                     }
@@ -98,6 +115,14 @@ struct MapExperienceView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 82)
             .accessibilityElement(children: .contain)
+        }
+        .fileImporter(
+            isPresented: $isImportingPack,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case let .success(urls) = result, let url = urls.first else { return }
+            Task { await model.importTravelPack(at: url) }
         }
         .sheet(isPresented: Binding(
             get: { model.isRecapPresented },
@@ -112,9 +137,16 @@ struct MapExperienceView: View {
             Label(model.walk.title, systemImage: "figure.walk")
                 .font(.headline)
             Spacer()
-            Label(String(localized: "离线可用"), systemImage: "arrow.down.circle.fill")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.teal)
+            // A verified pack says so; the bundled walk says it is a sample.
+            // `離線可用` on its own would let the two read alike.
+            Label(
+                model.installedPack == nil
+                    ? String(localized: "示例 · 离线可用")
+                    : String(localized: "已校验路线包 · 离线可用"),
+                systemImage: "arrow.down.circle.fill"
+            )
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.teal)
         }
     }
 

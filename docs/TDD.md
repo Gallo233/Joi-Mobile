@@ -623,6 +623,42 @@ is also deliberately absent — `SpeechPriority.placeNarration` still has no
 producer, because speaking a stop needs the voice pipeline and device audio
 evidence (G4) rather than one more call site.
 
+### 6.15 G2-J4C — A travel pack that was actually checked
+
+`G2-J4C` gives `JM-P0-014` its integrity half. `OfflinePackVerifier` checked a
+manifest's *shape* — schema, a non-empty route path, non-empty rights, expiry —
+and nothing checked its contents, so "a verified pack" meant a well-formed
+sentence about files nobody had opened. `FAIL-025` and `FAIL-026` were `absent`
+and `partial` in the failure corpus for the same reason: nothing installed packs.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J4C-01` | Every declared file must exist and hash to what the manifest says; a missing file is `FAIL-025` and a wrong one is `FAIL-026`, because one is a redownload and the other is a pack not to trust | OfflinePack / `TravelPackInstaller.verifyDeclaredFiles` | installer tests |
+| `J4C-02` | A pack ships what it declares and nothing else. A hash list proves the content it covers and says nothing about content nobody declared | OfflinePack / `refuseUndeclaredFiles` | undeclared-content test |
+| `J4C-03` | A declared path may not be absolute, contain `..` or a backslash, carry control characters, or resolve outside the pack root | OfflinePack / `resolve(_:in:)` | traversal tests |
+| `J4C-04` | Rights, schema and expiry are refusals, not warnings; a pack with no stated rights does not install | OfflinePack / `OfflinePackVerifier` | rights, schema and expiry tests |
+| `J4C-05` | The pack's tour is built and validated before anything is sealed, so a route too short to follow or a stop that is not on it refuses the whole pack | OfflinePack / `RouteNarrative` | stray-stop test |
+| `J4C-06` | Nothing is moved until every check has passed, and the sealed copy is re-read and re-verified in place. A refused candidate leaves the installed pack byte-identical | OfflinePack / `seal(_:manifest:)` | last-valid-version test |
+| `J4C-07` | A verified pack becomes the walk and the surface stops calling it a sample; a refused one changes nothing and says which kind of refusal it was | App / `AppModel.importTravelPack` | `TravelPackImportTests` |
+| `J4C-08` | The route cannot be swapped under a walk in progress | App / `AppModel.importTravelPack` | walk-in-progress test |
+
+`TravelPackContentV1` is a separate contract from `TravelPackManifestV1`: the
+manifest describes the *pack* — identity, version, rights, file list — and the
+content describes what it is *for*. The content file is declared and hashed like
+any other, so the tour is covered by the same integrity check as the rest.
+
+This installer is deliberately **not** an archive reader. `CharacterRuntime` owns
+the restricted ZIP profile (DEC-011, DEC-029), and duplicating that policy here
+would create a second, weaker copy of the most safety-critical code in the
+repository. A pack arrives as a directory; packaging one is a later decision that
+should reuse that profile rather than re-derive it.
+
+`FAIL-025` is now implemented and `FAIL-026` stays **partial** for one stated
+reason: there is no signature. Self-declared hashes prove integrity, not
+publisher authenticity, so no pack can yet be attributed to anyone — the same gap
+DEC-010 records for character packages. Downloading packs is also out of scope:
+this imports a pack the user already has.
+
 ## 7. Map, navigation and offline PoC
 
 - Wrap MapLibre Native in `MapSurfaceProvider`; it renders online styles and verified downloaded corridor resources but never owns route truth.
@@ -771,7 +807,7 @@ The first slice is complete when traceability, XcodeGen generation, generic simu
 | JM-P0-011 | Cultural walking navigation | MapFeature, Backend | `NavigationProvider`, route API | `RouteProgressEngineTests`, `CachedWalkTests`; **no Ferrostar integration**, outdoor walk remains G4 | G2/G4 |
 | JM-P0-012 | Routes-as-narrative | OfflinePack, App | `RouteStop`, `RouteNarrative`, `RecapEntry` | `RouteNarrativeTests`, `RouteStoryTests` | G2 |
 | JM-P0-013 | Trusted sources | CompanionCore, MapFeature, App | `SourceProjectionV1`, `SourceEligibility`, `ClaimSupport` | `SourceEligibilityTests`, `SourceProjectionTests`; **partial** — no backend produces sources yet | G2/G3 |
-| JM-P0-014 | Offline travel pack | OfflinePack, MapFeature | `TravelPackManifestV1`, cached navigation | `OfflinePackVerifierTests`, `RouteProgressEngineTests`; **no pack import**, flight-mode walk remains G4 | G2/G4/G5 |
+| JM-P0-014 | Offline travel pack | OfflinePack, App | `TravelPackManifestV1`, `TravelPackContentV1`, `TravelPackInstaller` | `TravelPackInstallerTests`, `TravelPackImportTests`, `OfflinePackVerifierTests`; **partial** — no signature and no download; flight-mode walk remains G4 | G2/G4/G5 |
 | JM-P0-015 | Character library/import | CharacterRuntime, App | `CharacterPackageManifestV1`, `CharacterMotionV1` | `CharacterPackageInstallerTests`, `CharacterPackageValidatorTests` | G2/G3/G5 |
 | JM-P0-016 | Native renderer parity | CharacterRuntime | `CharacterRenderer`, compatibility receipt, `CharacterContentAccess.motions` | `Live2DNativeAdapterTests`, `VRMNativeAdapterTests`; device matrix remains G4 | G4/G5 |
 | JM-P0-017 | Package isolation/safety | CharacterRuntime, Contracts | package schema and validator | `CharacterPackageValidatorTests`, `RestrictedZIPConformanceTests`, `CrossPlatformConformanceTests` | G1/G3 |

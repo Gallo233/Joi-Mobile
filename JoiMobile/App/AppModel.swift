@@ -100,7 +100,15 @@ final class AppModel {
     /// The cached walk on the Map surface, and the latest reading of where the
     /// user is along it. The reading is a projection: `JourneyContextStore` is
     /// still the only thing that records progress.
-    let walk = CachedWalk.sample
+    /// The walk on the Map surface: a verified travel pack's tour when one is
+    /// installed, otherwise the bundled sample. Swapped only between walks —
+    /// changing the route under a walk in progress would invalidate the
+    /// progress, the journey snapshot and the story all at once.
+    private(set) var walk = CachedWalk.sample
+    /// The installed pack, if any (`G2-J4C`).
+    private(set) var installedPack: InstalledTravelPack?
+    private(set) var packImportMessage: String?
+    @ObservationIgnored private lazy var packInstaller = TravelPackInstaller(root: Self.defaultPackRoot())
     private(set) var walkObservation: CachedRouteProgressObservation?
     private(set) var isWalking = false
     /// Internal rather than private so a test can feed a reading through the
@@ -358,6 +366,62 @@ final class AppModel {
         return String(
             localized: "已偏离路线 \(Int(guidance.distanceMeters.rounded())) 米，朝\(Self.compass(guidance.bearingToRouteDegrees))走回去。"
         )
+    }
+
+    // MARK: - Travel packs (`G2-J4C`)
+
+    /// Verifies a pack the user chose and, if it holds, makes its tour the walk.
+    ///
+    /// Refused while a walk is running: swapping the route under a walk in
+    /// progress would invalidate its progress, its journey snapshot and its
+    /// story together, and there is no reading of that which is not a bug.
+    func importTravelPack(at url: URL) async {
+        guard !isWalking else {
+            packImportMessage = String(localized: "步行进行中，先结束再导入路线包。")
+            return
+        }
+        // A user-chosen folder needs its security scope opened, and closed
+        // whatever happens next.
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let installed = try await packInstaller.install(from: url)
+            walk = try CachedWalk(pack: installed)
+            installedPack = installed
+            furthestWalkProgress = 0
+            packImportMessage = String(localized: "已导入：\(installed.title)")
+        } catch {
+            // The installed pack, if there was one, is untouched by a refusal.
+            packImportMessage = Self.packFailureMessage(error)
+        }
+    }
+
+    func acknowledgePackMessage() { packImportMessage = nil }
+
+    /// Missing content and invalid content get different copy because they need
+    /// different recoveries: one is worth fetching again, the other is a pack
+    /// not to trust (`FAIL-025` / `FAIL-026`).
+    static func packFailureMessage(_ error: Error) -> String {
+        guard let error = error as? OfflinePackError else {
+            return String(localized: "这个路线包无法导入；当前路线没有变化。")
+        }
+        switch error {
+        case .missingFile:
+            return String(localized: "这个路线包缺少它自己声明的内容；当前路线没有变化。")
+        case .expired:
+            return String(localized: "这个路线包已过期；当前路线没有变化。")
+        case .missingRights:
+            return String(localized: "这个路线包没有写明使用权利；当前路线没有变化。")
+        default:
+            return String(localized: "这个路线包没有通过校验；当前路线没有变化。")
+        }
+    }
+
+    private static func defaultPackRoot() -> URL {
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return root.appendingPathComponent("JoiMobile", isDirectory: true)
+            .appendingPathComponent("travel-packs", isDirectory: true)
     }
 
     // MARK: - One-turn journey attachment (`G2-J3B`)

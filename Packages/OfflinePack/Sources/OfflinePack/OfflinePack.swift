@@ -12,6 +12,28 @@ public enum OfflinePackError: Error, Equatable, Sendable {
     /// A declared stop does not project onto the route it belongs to. A tour
     /// missing one of its stops is a broken pack, not a shorter tour.
     case stopOffRoute(String)
+
+    // `FAIL-025 offlinePackMissing`: content the pack promised is not there.
+    // Recoverable by fetching the pack again.
+    case missingFile(String)
+
+    // `FAIL-026 offlinePackInvalid`: the pack is present and wrong. Not a
+    // redownload problem — a pack you should not trust.
+    case invalidManifest
+    case invalidContent
+    case hashMismatch(String)
+    /// Content the pack ships but never declared. A hash list proves what it
+    /// covers and says nothing about what it does not (DEC-020's rule, applied
+    /// to tours).
+    case undeclaredFile(String)
+    /// A path that could reach outside the pack, or an entry that is not a
+    /// regular file.
+    case unsupportedEntry(String)
+    case tooManyFiles
+    case packTooLarge
+    /// Sealing the verified pack into the store did not produce the pack that
+    /// was verified.
+    case activationFailed
 }
 
 public struct OfflinePackVerifier: Sendable {

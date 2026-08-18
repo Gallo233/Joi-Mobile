@@ -252,21 +252,25 @@
       "id": "FAIL-025",
       "state": "offlinePackMissing",
       "cancellation": "Stop affected tour action; preserve last valid pack and unrelated downloads",
-      "status": "absent",
-      "owner": "OfflinePack",
-      "evidence": [],
-      "gap": "No travel pack import exists, so no pack asset can be missing."
+      "status": "implemented",
+      "owner": "OfflinePack, App",
+      "evidence": [
+        "TravelPackInstallerTests",
+        "TravelPackImportTests"
+      ]
     },
     {
       "id": "FAIL-026",
       "state": "offlinePackInvalid",
       "cancellation": "Abort activation and quarantine candidate; keep last valid pointer",
       "status": "partial",
-      "owner": "OfflinePack",
+      "owner": "OfflinePack, App",
       "evidence": [
-        "OfflinePackVerifierTests"
+        "OfflinePackVerifierTests",
+        "TravelPackInstallerTests",
+        "TravelPackImportTests"
       ],
-      "gap": "Manifest and hash verification exist and refuse an invalid pack; atomic activation, quarantine and a last-valid pointer do not, because nothing installs packs yet."
+      "gap": "Schema, rights, expiry, per-file hashes, undeclared content and traversal are all refused, the candidate is sealed only after every check passes, and a refusal leaves the installed pack untouched. What is missing is a signature: self-declared hashes prove integrity, not publisher authenticity, so no pack can yet be attributed to anyone (the same gap DEC-010 records for character packages)."
     },
     {
       "id": "FAIL-027",

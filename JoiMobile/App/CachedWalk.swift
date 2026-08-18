@@ -90,6 +90,22 @@ struct CachedWalk {
         ]
     )
 
+    /// The walk a verified travel pack describes (`G2-J4C`).
+    ///
+    /// Everything here was checked by `TravelPackInstaller` before the pack was
+    /// sealed — the route is long enough to follow and every stop projects onto
+    /// it — so this cannot fail for a pack that installed. It still throws
+    /// rather than force-trying, because a `CachedWalk` that could not be built
+    /// is a bug worth surfacing, not a crash worth shipping.
+    init(pack: InstalledTravelPack) throws {
+        try self.init(
+            route: pack.route,
+            title: pack.title,
+            arrivalNote: String(localized: "到了。这段路就走到这里。"),
+            stops: pack.stops
+        )
+    }
+
     /// Route coordinates projected into a unit square for drawing, preserving
     /// aspect at this latitude so the corridor is not visibly stretched.
     ///
