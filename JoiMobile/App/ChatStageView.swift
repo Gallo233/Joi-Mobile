@@ -60,6 +60,16 @@ struct ChatStageView: View {
             stageMessage
                 .padding(.horizontal, 20)
 
+            // Above the composer for the same reason the attachment card is:
+            // it is a property of the message about to be written. Deliberately
+            // not in the message slot, which would replace the character's last
+            // reply for as long as the network stayed away.
+            if model.isShowingCachedMode {
+                CachedModeStrip()
+                    .padding(.horizontal, 20)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
             // Directly above the composer, because it is a property of the
             // message about to be written rather than of the screen.
             if let attachment = model.pendingJourneyAttachment {
@@ -179,5 +189,29 @@ struct ChatStageView: View {
             .frame(maxWidth: 330)
             .transition(.move(edge: .trailing))
         }
+    }
+}
+
+
+/// Says the app is offline, and what that does not stop.
+///
+/// Quiet on purpose: being offline is a state the user may sit in for a whole
+/// walk, so this reports rather than warns, and it never takes the slot the
+/// character's own words use.
+private struct CachedModeStrip: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "wifi.slash")
+                .font(.footnote)
+            Text("没有网络，暂时无法对话。地图上的缓存路线仍然可用。")
+                .font(.footnote)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityElement(children: .combine)
     }
 }

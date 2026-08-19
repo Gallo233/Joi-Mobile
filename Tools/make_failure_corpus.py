@@ -113,14 +113,15 @@ STATUS: dict[str, tuple[str, str, list[str], str]] = {
     "FAIL-022": ("implemented", "CompanionCore, App", ["SourceEligibilityTests", "SourceProjectionTests"], ""),
     "FAIL-023": ("implemented", "CompanionCore", ["SourceEligibilityTests"], ""),
     "FAIL-024": (
-        "partial",
+        "implemented",
         "ChatFeature, App",
-        ["ChatSessionControllerTests", "ChatStallTimeoutTests", "NetworkDegradedTests"],
-        "A turn that goes silent is now timed out and cancelled rather than left open, reported "
-        "as its own retryable state distinct from an unavailable service, and it names the "
-        "cached walk as what still works without a network. What is missing is reachability "
-        "itself: nothing observes the connection, so the app cannot enter a degraded mode "
-        "before a turn stalls, and there is no cached answer for Chat to fall back to.",
+        [
+            "ChatSessionControllerTests",
+            "ChatStallTimeoutTests",
+            "NetworkDegradedTests",
+            "ReachabilityTests",
+        ],
+        "",
     ),
     "FAIL-025": (
         "implemented",

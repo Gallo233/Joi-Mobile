@@ -890,6 +890,47 @@ stay usable, but there is still no named playback-failure state on screen and no
 retry offered after recovery. Device evidence for a real call, a real Siri
 invocation and a real headset unplug remains G4.
 
+### 6.22 G2-J5G — The app notices it is offline, instead of finding out by failing
+
+`G2-J5C` bounded a turn by silence, which is what catches a connection that dies
+mid-stream. It did nothing for the case the device already knew about. With no
+interface at all, sending cleared the draft, spent the one-turn journey
+attachment, opened a request that could not leave, and then waited out the stall
+timeout before saying anything. Every part of that was avoidable, and `FAIL-024`
+recorded exactly why: nothing in the product observed the connection.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J5G-01` | A send is refused before the turn is spent when the device reports no usable interface, and the gateway is never called | App / `SendPrecondition`, `AppModel.sendChatMessage` | `ReachabilityTests` |
+| `J5G-02` | The refusal costs a tap, not the sentence: the draft survives, and so does the journey attachment | App / `AppModel.sendChatMessage` | draft- and attachment-invariance tests |
+| `J5G-03` | `FAIL-024`: the refusal is retryable and names the cached walk as what works with no network | App / `Localizable.xcstrings` | refusal-copy test |
+| `J5G-04` | Chat shows cached mode while idle and offline, before the user taps anything, and steps aside for any message that says more | App / `AppModel.isShowingCachedMode` | ambient-state tests |
+| `J5G-05` | An unasked network never refuses: `.unknown` permits the send, so a cold launch does not look offline | App / `NetworkReachability` | cold-launch test |
+| `J5G-06` | `requiresConnection` reads as unreachable; an unknown future status reads as available | App / `NetworkMonitor.apply` | path-status test |
+| `J5G-07` | An expensive or constrained path still sends. Recording those two facts is not a licence to act on them | App / `NetworkMonitor` | expensive/constrained test |
+| `J5G-08` | The accepted transcript is untouched by a refusal | App / `AppModel.chatTranscript` | transcript-invariance test |
+
+**A network that says it is there proves nothing.** The proxy may be down, a
+captive portal may be answering for it, the route may be black-holed. A network
+that says it is *not* there is the one report worth acting on, because it cannot
+be wrong in the direction that matters. So `SendPrecondition` only ever refuses;
+it never promises, and it does not replace the stall timeout, which remains the
+only thing that can prove a live-looking connection is dead. The two are
+complementary rather than redundant, and neither subsumes the other.
+
+**`isExpensive` and `isConstrained` are read and deliberately not acted on.** A
+chat turn is something the user just asked for, not discretionary background
+work, so Low Data Mode is not a reason to refuse it — and refusing on cellular
+would be a data-saving promise this product has never made. They are recorded so
+the decision is visible rather than looking like an oversight.
+
+`FAIL-024` moves to **implemented**. Two limits are worth stating rather than
+leaving to be discovered: the app distinguishes *absent* from *present*, not
+*fast* from *slow*, so a sluggish but working turn is simply awaited — abandoning
+it would be worse; and there is no cached answer for Chat to serve, because the
+cached mode PRD §7 names is Map's cached walk, which the refusal points at.
+Real airplane-mode behaviour on a device remains G4.
+
 ## 7. Map, navigation and offline PoC
 
 - Wrap MapLibre Native in `MapSurfaceProvider`; it renders online styles and verified downloaded corridor resources but never owns route truth.
@@ -1028,7 +1069,7 @@ The first slice is complete when traceability, XcodeGen generation, generic simu
 | JM-P0-001 | Two-surface shell | App, CompanionCore | `CompanionSessionStore`, `PrimarySurface` | `StateOwnerTests`, `AppModelTests` surface cases | G1/G2 |
 | JM-P0-002 | Local-first first run | App, CharacterRuntime | `AppModel`, `WelcomeView`, package importer | `FirstRunTests`, `ContractArtifactTests` permission-boundary guard | G2 |
 | JM-P0-003 | Full Chat stage | ChatFeature, CharacterRuntime, App | `ChatGateway`, `ChatTurnProjection`, `CharacterRenderer` | `ChatTurnProjectionTests`, `AppModelTests` chat turn cases | G2/G4 |
-| JM-P0-004 | Official AI boundary | ChatFeature, Backend | OpenAPI `/v1/chat/streams`, `SSEChatGateway`, `ChatBackendEndpoint` | `SSEChatGatewayTests`, `MockBackendIntegrationTests`, secret scan | G1/G3 |
+| JM-P0-004 | Official AI boundary | ChatFeature, Backend | OpenAPI `/v1/chat/streams`, `SSEChatGateway`, `ChatBackendEndpoint`, `SendPrecondition` | `SSEChatGatewayTests`, `MockBackendIntegrationTests`, `ReachabilityTests`, secret scan | G1/G3 |
 | JM-P0-005 | Layered local memory | CompanionCore, App, SyncClient | `MemoryRepository`, `MemoryProposalV1`, `MemoryRecordV1` | `MemoryProposalTests`, `StateOwnerTests` location case | G3 |
 | JM-P0-006 | Cross-surface continuity | CompanionCore, App | `CompanionSessionStore`, `JourneyContextSnapshot`, `JourneyUseReceiptV1` | `JourneyConsentTests`, `JourneyAttachmentTests` | G1/G3 |
 | JM-P0-007 | Speech coordination | CompanionCore, App | `SpeechCoordinator`, `MouthOpening`, `SpeechInterruptionPolicy` | `SpeechCoordinationTests`, `MouthOpeningTests`, `SpeechInterruptionTests`; real call/Siri/headset evidence remains G4 | G2/G4 |
@@ -1046,7 +1087,7 @@ The first slice is complete when traceability, XcodeGen generation, generic simu
 | JM-P0-019 | Optional category sync | SyncClient, Backend | `SyncGateway`, `MemorySyncRecordV1`, `CharacterPackageSyncRecordV1`, `LocationSyncAuthorizationV1` | `SyncConsentStoreTests`, `StateOwnerTests` location case; **no sync client or cursor/tombstone replay exists** | G3 |
 | JM-P0-020 | Editable Simplified-Chinese copy | App, all features, Backend | String Catalog, locale context and cache-key contract | `ContractArtifactTests` catalog and surface-copy cases | G1/G2 |
 | JM-P0-021 | Deferred experience hooks | App, all UI features | semantic labels, system text styles and motion-policy seams | shell hook smoke tests; full matrix deferred | G1 / later accessibility gate |
-| JM-P0-022 | Failure/recovery contract | all modules | typed error/state enums, `Contracts/failure-states.json` | `FailureStateTests`, `ContractArtifactTests` corpus cases, `AppModelTests`, `ChatSessionControllerTests`; **partial** — 17 of 32 states implemented, 7 partial, 8 absent, and every remaining absent one belongs to a feature that does not exist yet (see-and-ask, sync, accounts) | G2/G3 |
+| JM-P0-022 | Failure/recovery contract | all modules | typed error/state enums, `Contracts/failure-states.json` | `FailureStateTests`, `ContractArtifactTests` corpus cases, `AppModelTests`, `ChatSessionControllerTests`; **partial** — 18 of 32 states implemented, 6 partial, 8 absent, and every remaining absent one belongs to a feature that does not exist yet (see-and-ask, sync, accounts) | G2/G3 |
 | JM-P0-023 | Data-purpose governance | App, Backend, SyncClient | consent/media receipts, export and deletion request/status contracts | **partial** — local memory deletion is covered by `MemoryProposalTests`; no export, no server acknowledgement | G3/G6 |
 | JM-P0-024 | Privacy-safe quality metrics | App, Backend | analytics allowlist | **not implemented** — no analytics exist; `ProviderConfidentialityTests` covers only proxy redaction | G3/G6 |
 

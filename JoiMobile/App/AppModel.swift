@@ -193,11 +193,16 @@ final class AppModel {
     /// construction and after a successful `CompanionSessionStore` CAS.
     var currentCharacterName: String { sessionSelection.displayName }
 
+    /// What the device's interfaces say about the network (`G2-J5G`). Read
+    /// before a turn is spent, never as a promise that the backend answers.
+    let networkMonitor: NetworkMonitor
+
     init(
         installer: CharacterPackageInstaller? = nil,
         renderer: any CharacterRenderer = StaticCharacterRenderer(),
         chatGateway: (any ChatGateway)? = nil,
         memoryStore: (any MemoryRepository)? = nil,
+        networkMonitor: NetworkMonitor? = nil,
         defaults: UserDefaults = .standard,
         stallTimeout: Duration = ChatSessionController.defaultStallTimeout,
         initialSelection: CharacterSelection = CharacterSelection(characterID: "joi.starter", displayName: "Joi"),
@@ -205,6 +210,7 @@ final class AppModel {
         sessionID: String = "session.local"
     ) {
         self.defaults = defaults
+        self.networkMonitor = networkMonitor ?? NetworkMonitor()
         isWelcomePresented = !defaults.bool(forKey: Self.welcomeSeenKey)
         self.installer = installer ?? CharacterPackageInstaller(root: Self.defaultCharacterRoot())
         self.memoryStore = memoryStore ?? MemoryStore(fileURL: MemoryStore.defaultFileURL())
@@ -836,11 +842,36 @@ final class AppModel {
             )
             return
         }
+        // `FAIL-024` (`G2-J5G`). Checked here for the same reason the attachment
+        // is: the draft is still the user's sentence at this point. Spending the
+        // turn would cost them the text and then a stall timeout to learn what
+        // the device already knew — and the journey attachment would be spent on
+        // a request that never left.
+        guard SendPrecondition.mayAttemptTurn(networkMonitor.reachability) else {
+            chatTurnState = .failed(
+                message: String(localized: "现在没有网络，这句话还没有发出去，已经留在输入框里。地图上的缓存路线不需要联网。"),
+                retryable: true
+            )
+            return
+        }
         chatDraft = ""
         chatTask?.cancel()
         chatTask = Task { [weak self] in
             await self?.runChatTurn(text: text)
         }
+    }
+
+    /// Whether Chat should show that it is in cached mode (`FAIL-024`).
+    ///
+    /// Only while idle, and that restraint is the design rather than an
+    /// oversight: a pending turn already shows a draft bubble, and a failed one
+    /// already carries a message that says strictly more than this would — that
+    /// the sentence was kept, and that a retry is worth making. This is the
+    /// ambient state for when there is nothing more specific to say.
+    var isShowingCachedMode: Bool {
+        guard networkMonitor.reachability == .unreachable else { return false }
+        if case .idle = chatTurnState { return true }
+        return false
     }
 
     /// User-initiated stop. A late terminal event cannot append text afterwards
