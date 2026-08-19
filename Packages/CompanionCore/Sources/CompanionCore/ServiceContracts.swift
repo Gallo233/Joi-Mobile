@@ -174,6 +174,11 @@ public enum SpeechCancellationReason: String, Codable, Sendable {
     case routePriority
     case characterChanged
     case interrupted
+    /// The line never played at all: no audio arrived, or the device refused it.
+    /// Kept apart from `interrupted` because the two are different facts — one
+    /// line was taken away mid-sentence, the other was never heard — and
+    /// `FAIL-006` and `FAIL-007` name them separately.
+    case playbackFailed
 }
 
 public enum SpeechStartResult: Equatable, Sendable {

@@ -931,6 +931,50 @@ it would be worse; and there is no cached answer for Chat to serve, because the
 cached mode PRD §7 names is Map's cached walk, which the refusal points at.
 Real airplane-mode behaviour on a device remains G4.
 
+### 6.23 G2-J5H — The character's silence has a reason
+
+`G2-J5H` closes `FAIL-006`. A line that could not be spoken was silent by
+design, and the design was half right: no substitute voice may ever speak as the
+character (DEC-021), and the transcript already carries the words. What it left
+out is that a character which simply stops making sound is indistinguishable
+from a broken one — and PRD §7.1 asks for something the code did not do at all.
+"End playback generation" was never done, so a line that never played left
+`SpeechCoordinator` naming it as what the character was currently saying,
+indefinitely. This is the same defect `G2-J5F` fixed for interruptions, on the
+path nobody had looked at.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J5H-01` | `FAIL-006`: a line that never played ends its playback generation, so the coordinator stops naming it | CompanionCore, App / `SpeechCancellationReason.playbackFailed` | `SpeechFailureTests` |
+| `J5H-02` | A failure is not an interruption. One line was taken away mid-sentence, the other was never heard, and the two reasons stay apart | CompanionCore / `SpeechCancellationReason` | reason-distinctness test |
+| `J5H-03` | Three named reasons the product can genuinely tell apart: the voice service refused, the audio would not decode, the route refused | App / `SpeechFailure` | reason-message test |
+| `J5H-04` | The visible text is preserved and the reason is shown *on* the bubble rather than in place of it | App / `CompanionBubble.voiceFailure` | transcript-invariance test |
+| `J5H-05` | A retry is offered and never performed on its own | App / `AppModel.retryLastVoiceLine` | retry test |
+| `J5H-06` | A new line clears the old verdict, and a stopped line owes no explanation at all | App / `SpeechPlayer.speak`, `stop` | supersede and stop tests |
+| `J5H-07` | A failed line does not leave the player believing it is talking | App / `SpeechPlayer.fail` | stuck-state test |
+
+**The retry is offered, not taken.** PRD §7 asks for "retry after route/
+interruption recovery", and the tempting reading is an automatic replay once the
+route comes back. `G2-J5F` already decided against that for interruptions, for
+reasons that apply here unchanged: the product does not get to decide on its own
+that a stale line is still worth hearing. What recovery buys is a control that
+now works, not a sound the user did not ask for.
+
+**Why three reasons rather than one.** They are distinguishable in code — a
+non-200 or a transport failure, a decode that throws, a session or `play()` that
+refuses — and they do not have the same remedy: a voice service that is down
+recovers on its own, audio that will not decode is a bug in what was sent, and a
+route that refuses is usually something the user can change. Collapsing them
+would have been easier to write and useless to read.
+
+Verified on the running app rather than only in tests: with the mock backend
+serving `/v1/chat/streams` and nothing at `/v1/speech`, a real turn renders the
+accepted line under **「这句话没有语音，文字仍在。重试」**.
+
+`FAIL-006` moves to **implemented**; the corpus stands at 19 implemented, 5
+partial, 8 absent. Real audio-route failures on a device — a Bluetooth device
+that disappears mid-fetch, a session another app holds — remain G4.
+
 ## 7. Map, navigation and offline PoC
 
 - Wrap MapLibre Native in `MapSurfaceProvider`; it renders online styles and verified downloaded corridor resources but never owns route truth.
@@ -1072,7 +1116,7 @@ The first slice is complete when traceability, XcodeGen generation, generic simu
 | JM-P0-004 | Official AI boundary | ChatFeature, Backend | OpenAPI `/v1/chat/streams`, `SSEChatGateway`, `ChatBackendEndpoint`, `SendPrecondition` | `SSEChatGatewayTests`, `MockBackendIntegrationTests`, `ReachabilityTests`, secret scan | G1/G3 |
 | JM-P0-005 | Layered local memory | CompanionCore, App, SyncClient | `MemoryRepository`, `MemoryProposalV1`, `MemoryRecordV1` | `MemoryProposalTests`, `StateOwnerTests` location case | G3 |
 | JM-P0-006 | Cross-surface continuity | CompanionCore, App | `CompanionSessionStore`, `JourneyContextSnapshot`, `JourneyUseReceiptV1` | `JourneyConsentTests`, `JourneyAttachmentTests` | G1/G3 |
-| JM-P0-007 | Speech coordination | CompanionCore, App | `SpeechCoordinator`, `MouthOpening`, `SpeechInterruptionPolicy` | `SpeechCoordinationTests`, `MouthOpeningTests`, `SpeechInterruptionTests`; real call/Siri/headset evidence remains G4 | G2/G4 |
+| JM-P0-007 | Speech coordination | CompanionCore, App | `SpeechCoordinator`, `MouthOpening`, `SpeechInterruptionPolicy` | `SpeechCoordinationTests`, `MouthOpeningTests`, `SpeechInterruptionTests`, `SpeechFailureTests`; real call/Siri/headset evidence remains G4 | G2/G4 |
 | JM-P0-008 | Persistent Map experience | MapFeature, App | `JourneyContextStore`, drawer state | `MapExperienceStateTests`, `CachedWalkTests` | G2/G4 |
 | JM-P0-009 | Arrive-and-tell | OfflinePack, App | `PlaceResolver`, `PlaceProposal`, `ConfirmedPlace` | `PlaceResolverTests`, `ArriveAndTellTests`; **partial** — cached-route places only, no online lookup; GPS field script remains G4 | G2/G4 |
 | JM-P0-010 | See-and-ask | MapFeature, Backend | vision upload contract | **not implemented** — no capture or recognition path exists | G3/G4 |
@@ -1087,7 +1131,7 @@ The first slice is complete when traceability, XcodeGen generation, generic simu
 | JM-P0-019 | Optional category sync | SyncClient, Backend | `SyncGateway`, `MemorySyncRecordV1`, `CharacterPackageSyncRecordV1`, `LocationSyncAuthorizationV1` | `SyncConsentStoreTests`, `StateOwnerTests` location case; **no sync client or cursor/tombstone replay exists** | G3 |
 | JM-P0-020 | Editable Simplified-Chinese copy | App, all features, Backend | String Catalog, locale context and cache-key contract | `ContractArtifactTests` catalog and surface-copy cases | G1/G2 |
 | JM-P0-021 | Deferred experience hooks | App, all UI features | semantic labels, system text styles and motion-policy seams | shell hook smoke tests; full matrix deferred | G1 / later accessibility gate |
-| JM-P0-022 | Failure/recovery contract | all modules | typed error/state enums, `Contracts/failure-states.json` | `FailureStateTests`, `ContractArtifactTests` corpus cases, `AppModelTests`, `ChatSessionControllerTests`; **partial** — 18 of 32 states implemented, 6 partial, 8 absent, and every remaining absent one belongs to a feature that does not exist yet (see-and-ask, sync, accounts) | G2/G3 |
+| JM-P0-022 | Failure/recovery contract | all modules | typed error/state enums, `Contracts/failure-states.json` | `FailureStateTests`, `ContractArtifactTests` corpus cases, `AppModelTests`, `ChatSessionControllerTests`; **partial** — 19 of 32 states implemented, 5 partial, 8 absent, and every remaining absent one belongs to a feature that does not exist yet (see-and-ask, sync, accounts) | G2/G3 |
 | JM-P0-023 | Data-purpose governance | App, Backend, SyncClient | consent/media receipts, export and deletion request/status contracts | **partial** — local memory deletion is covered by `MemoryProposalTests`; no export, no server acknowledgement | G3/G6 |
 | JM-P0-024 | Privacy-safe quality metrics | App, Backend | analytics allowlist | **not implemented** — no analytics exist; `ProviderConfidentialityTests` covers only proxy redaction | G3/G6 |
 

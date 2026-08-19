@@ -9,6 +9,13 @@ struct CompanionBubble: View {
     let text: String
     let isDraft: Bool
     let onStop: (() -> Void)?
+    /// Why this line had no voice, if it had none (`FAIL-006`). Shown *on* the
+    /// bubble rather than in place of it, because PRD §7 asks for the readable
+    /// text to be preserved and a banner would have replaced it.
+    var voiceFailure: String? = nil
+    /// Speaks it again. Offered, never performed on its own — see
+    /// `AppModel.retryLastVoiceLine`.
+    var onRetryVoice: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -26,6 +33,23 @@ struct CompanionBubble: View {
                             .foregroundStyle(.indigo)
                     }
                 }
+            }
+            if !isDraft, let voiceFailure {
+                HStack(spacing: 6) {
+                    Image(systemName: "speaker.slash")
+                        .font(.caption2)
+                    Text(voiceFailure)
+                        .font(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let onRetryVoice {
+                        Button(String(localized: "重试"), action: onRetryVoice)
+                            .font(.caption.weight(.semibold))
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.indigo)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(.secondary)
             }
             Text(text)
                 .font(.callout)

@@ -17,14 +17,43 @@ protocol LipSyncAmplitudeSource: AnyObject {
     var currentAmplitude: Float { get }
 }
 
+/// Why the character had no voice for a line (`FAIL-006`, `G2-J5H`).
+///
+/// Three cases rather than one, because the product can genuinely tell them
+/// apart and they do not have the same remedy: a voice service that is down
+/// recovers on its own, audio that will not decode is a bug in what was sent,
+/// and a route that refuses is usually something the user can change.
+enum SpeechFailure: Equatable, Sendable {
+    /// The voice service refused the request or could not be reached.
+    case voiceUnavailable
+    /// Bytes arrived and were not audio this device can play.
+    case audioUndecodable
+    /// The device would not play it: the audio session or the current route
+    /// refused.
+    case routeRefused
+
+    var message: String {
+        switch self {
+        case .voiceUnavailable: String(localized: "这句话没有语音，文字仍在。")
+        case .audioUndecodable: String(localized: "这句话的语音无法播放，文字仍在。")
+        case .routeRefused: String(localized: "这台设备现在不能播放语音，文字仍在。")
+        }
+    }
+}
+
 /// Fetches and plays one character line, exposing its live amplitude.
 ///
-/// A failure here is silent by design: the transcript already carries the words,
-/// and no substitute voice may speak as the character.
+/// A failure never substitutes another voice for the character's — that rule is
+/// DEC-021's and is unchanged. What *has* changed is that it is no longer
+/// silent: a line that could not be spoken says so, because a character that
+/// simply stops making sound is indistinguishable from one that is broken.
 @MainActor
 @Observable
 final class SpeechPlayer: LipSyncAmplitudeSource {
     private(set) var isSpeaking = false
+    /// Why the last line had no voice, or `nil` if none is owed. Cleared by the
+    /// next line, because a fresh attempt supersedes the previous verdict.
+    private(set) var failure: SpeechFailure?
     @ObservationIgnored private var player: AVAudioPlayer?
     /// AVAudioPlayer calls back off the main actor, so the delegate is a separate
     /// non-isolated object that hops rather than making this whole type unsafe.
@@ -49,6 +78,12 @@ final class SpeechPlayer: LipSyncAmplitudeSource {
     /// not it: the player knows the audio stopped, and the owner decides what
     /// that means for the cue.
     @ObservationIgnored var onInterrupted: (@MainActor () -> Void)?
+
+    /// Called when a line could not be spoken at all (`FAIL-006`). PRD §7.1
+    /// requires the playback generation to be ended, which only the owner can
+    /// do — until this existed, a line that never played left `SpeechCoordinator`
+    /// naming it as the thing the character was currently saying.
+    @ObservationIgnored var onFailed: (@MainActor (SpeechFailure) -> Void)?
 
     @ObservationIgnored private let observers = ObserverTokens()
 
@@ -86,15 +121,27 @@ final class SpeechPlayer: LipSyncAmplitudeSource {
         let text = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         stop()
+        // A new attempt supersedes the previous verdict, so the old reason must
+        // not outlive the line it was about.
+        failure = nil
         fetchTask = Task { [weak self] in
             guard let self else { return }
-            guard let data = await fetchAudio(text: text, emotion: emotion) else { return }
+            guard let data = await fetchAudio(text: text, emotion: emotion) else {
+                // A cancelled fetch is not a failure: `stop()` and a superseding
+                // line both cancel, and neither owes the user an explanation.
+                guard !Task.isCancelled else { return }
+                self.fail(.voiceUnavailable)
+                return
+            }
             guard !Task.isCancelled else { return }
             play(data)
         }
     }
 
     func stop() {
+        // A line the user or a newer line ended owes no explanation, so a stale
+        // reason must not survive into the next one.
+        failure = nil
         fetchTask?.cancel()
         fetchTask = nil
         player?.stop()
@@ -222,38 +269,58 @@ final class SpeechPlayer: LipSyncAmplitudeSource {
     /// Claiming it lazily rather than at launch matters: configuring the session
     /// at startup would interrupt whatever the user was already listening to
     /// merely because they opened the app.
-    private func activateSession() {
-        guard !sessionActivated else { return }
+    @discardableResult
+    private func activateSession() -> Bool {
+        guard !sessionActivated else { return true }
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .spokenAudio)
             try session.setActive(true)
             sessionActivated = true
+            return true
         } catch {
-            // Playback will most likely fail next, which stays silent by design.
-            // Naming it here is the difference between a diagnosable silence and
-            // a mystery.
+            // Returned rather than swallowed: a session that refuses is a route
+            // problem, and reporting it as one is the difference between a
+            // diagnosable silence and a mystery.
             speechLog.error("speech unavailable: audio session refused")
+            return false
         }
     }
 
     private func play(_ data: Data) {
-        activateSession()
+        guard activateSession() else {
+            fail(.routeRefused)
+            return
+        }
         do {
             let player = try AVAudioPlayer(data: data)
             player.isMeteringEnabled = true
             player.delegate = playbackDelegate
             guard player.play() else {
                 speechLog.error("speech unavailable: playback refused")
+                fail(.routeRefused)
                 return
             }
             self.player = player
             peakAmplitude = 0
             isSpeaking = true
+            failure = nil
             speechLog.notice("speech playing: \(player.duration, privacy: .public)s of audio")
         } catch {
             speechLog.error("speech unavailable: audio not decodable")
+            fail(.audioUndecodable)
         }
+    }
+
+    /// Records the reason and hands the owner the one part only it can do: end
+    /// the playback generation, as PRD §7.1 requires of `FAIL-006`.
+    ///
+    /// Internal so a test can drive the same path a dead voice service drives,
+    /// without one.
+    func fail(_ reason: SpeechFailure) {
+        failure = reason
+        isSpeaking = false
+        onFailed?(reason)
     }
 
     private func finishPlayback() {

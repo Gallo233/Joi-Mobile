@@ -82,6 +82,9 @@ final class AppModel {
     /// never outlive the activation it is drawing.
     private(set) var stageContent: CharacterContentAccess?
 
+    /// The last line handed to the voice, kept so a failed one can be retried.
+    @ObservationIgnored private var lastVoiceLine: String?
+
     /// The motion the character was last asked to play. Presentation only: a
     /// renderer that cannot play it, or a package that never declared it,
     /// changes nothing about the session, the transcript or the turn.
@@ -241,6 +244,10 @@ final class AppModel {
             // this defers is the bookkeeping and not the silence.
             guard let self else { return }
             Task { await self.speechWasInterrupted() }
+        }
+        self.speechPlayer.onFailed = { [weak self] _ in
+            guard let self else { return }
+            Task { await self.speechDidFail() }
         }
     }
 
@@ -776,6 +783,9 @@ final class AppModel {
             // the whole point of asking.
             return nil
         }
+        // The voice line, not the display text: a retry has to replay what was
+        // meant to be heard rather than what happens to be on screen.
+        lastVoiceLine = text
         speechPlayer.speak(text)
         return generation
     }
@@ -794,6 +804,31 @@ final class AppModel {
     /// it — which is the exact property `JM-P0-007` asks of the owner.
     func speechWasInterrupted() async {
         await speechCoordinator.cancel(reason: .interrupted)
+    }
+
+    /// `FAIL-006` — the line could not be spoken at all (`G2-J5H`).
+    ///
+    /// PRD §7.1 asks for the playback generation to be ended and the visible
+    /// text preserved. The second half was already true — the transcript is
+    /// written on acceptance and never depended on audio — and the first was
+    /// not: a line that never played left the coordinator naming it as what the
+    /// character was currently saying, indefinitely.
+    func speechDidFail() async {
+        await speechCoordinator.cancel(reason: .playbackFailed)
+    }
+
+    /// Why the last line had no voice, if it had none.
+    var speechFailureMessage: String? { speechPlayer.failure?.message }
+
+    /// Speaks the last companion line again.
+    ///
+    /// Manual, for the same reason `G2-J5F` never resumes an interrupted line:
+    /// the product does not decide on its own that a stale line is still worth
+    /// hearing. PRD §7's "retry after route/interruption recovery" is offered
+    /// here rather than performed.
+    func retryLastVoiceLine() async {
+        guard let line = lastVoiceLine else { return }
+        await speakCompanionLine(line)
     }
 
     /// Asks the stage to play a declared motion. The name is semantic — `greet`,

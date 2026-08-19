@@ -60,13 +60,13 @@
       "id": "FAIL-006",
       "state": "speechPlaybackFailed",
       "cancellation": "End playback generation; preserve visible text/navigation",
-      "status": "partial",
+      "status": "implemented",
       "owner": "App",
       "evidence": [
         "VoiceInputTests",
-        "SpeechInterruptionTests"
-      ],
-      "gap": "A failed fetch leaves the turn's text intact and logs it, and an interruption now ends the line cleanly so the controls stay usable. There is still no named playback-failure state on screen and no retry offered after recovery."
+        "SpeechInterruptionTests",
+        "SpeechFailureTests"
+      ]
     },
     {
       "id": "FAIL-007",

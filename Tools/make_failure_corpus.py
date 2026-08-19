@@ -47,12 +47,10 @@ STATUS: dict[str, tuple[str, str, list[str], str]] = {
     "FAIL-004": ("implemented", "App", ["VoiceInputTests"], ""),
     "FAIL-005": ("implemented", "App", ["VoiceInputTests"], ""),
     "FAIL-006": (
-        "partial",
+        "implemented",
         "App",
-        ["VoiceInputTests", "SpeechInterruptionTests"],
-        "A failed fetch leaves the turn's text intact and logs it, and an interruption now "
-        "ends the line cleanly so the controls stay usable. There is still no named "
-        "playback-failure state on screen and no retry offered after recovery.",
+        ["VoiceInputTests", "SpeechInterruptionTests", "SpeechFailureTests"],
+        "",
     ),
     "FAIL-007": (
         "implemented",

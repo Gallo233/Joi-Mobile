@@ -316,6 +316,9 @@ class ContractArtifactTests(unittest.TestCase):
             # that copy lives in the catalog file rather than in the view.
             "JoiMobile/App/SettingsCatalog.swift",
             "JoiMobile/App/SettingsView.swift",
+            # G2-J5H puts the reason a line had no voice on `SpeechFailure`
+            # itself, so the copy lives beside the state rather than in a view.
+            "JoiMobile/App/SpeechPlayback.swift",
         ]
         missing: list[str] = []
         for name in surface:

@@ -141,7 +141,11 @@ struct ChatStageView: View {
                     characterName: characterName,
                     text: latest.text,
                     isDraft: false,
-                    onStop: nil
+                    onStop: nil,
+                    voiceFailure: model.speechFailureMessage,
+                    onRetryVoice: model.speechFailureMessage == nil
+                        ? nil
+                        : { Task { await model.retryLastVoiceLine() } }
                 )
                 .transition(.opacity)
             }
