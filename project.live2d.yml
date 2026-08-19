@@ -85,3 +85,16 @@ targets:
           - $(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/FrameworkMetallibs/MetalShaders.metallib
           - $(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/FrameworkMetallibs/VertShaderSrcBlend.metallib
           - $(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/FrameworkMetallibs/VertShaderSrcMaskedBlend.metallib
+
+  # The test target compiles its own sources, so it does not inherit the app's
+  # `OTHER_SWIFT_FLAGS`. Without this, a `#if JOI_LIVE2D` in Tests/Swift reads
+  # as false even on this rung, and a test written to check what the build
+  # admitted would quietly check nothing. It gets the define only — not the
+  # bridging header, the vendor sources or the framework — so tests may ask
+  # which runtime the app has without linking Cubism themselves.
+  JoiMobileTests:
+    settings:
+      base:
+        OTHER_SWIFT_FLAGS:
+          - $(inherited)
+          - -DJOI_LIVE2D

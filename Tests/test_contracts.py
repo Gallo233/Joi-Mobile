@@ -311,6 +311,11 @@ class ContractArtifactTests(unittest.TestCase):
             "JoiMobile/App/SourceViews.swift",
             # G2-J5A first-run welcome.
             "JoiMobile/App/WelcomeView.swift",
+            # G2-J5E Settings. The catalog is guarded as well as the view: most
+            # of what Settings says is the copy that names an unbuilt group, and
+            # that copy lives in the catalog file rather than in the view.
+            "JoiMobile/App/SettingsCatalog.swift",
+            "JoiMobile/App/SettingsView.swift",
         ]
         missing: list[str] = []
         for name in surface:
@@ -466,6 +471,73 @@ class ContractArtifactTests(unittest.TestCase):
         unknown_field = deepcopy(fixture)
         unknown_field["motions"][0]["duration_ms"] = 7270
         self.assertTrue(list(validator.iter_errors(unknown_field)))
+
+
+class NativeStageLadderTests(unittest.TestCase):
+    """The spec ladder must keep declaring its rungs, and the lane must repair itself.
+
+    `JoiMobile.xcodeproj` is generated and untracked, so whichever spec ran last
+    decides whether the shipped binary can draw a character at all. The required
+    check lane generates from `project.yml` — the rung that admits no vendor
+    runtime — and for three debugging cycles nothing put the native project back
+    afterwards. The stage then showed its static silhouette, correctly and
+    silently, and looked precisely like a model that failed to load.
+    """
+
+    def test_each_rung_of_the_ladder_declares_the_flag_the_stage_reads(self) -> None:
+        live2d = (ROOT / "project.live2d.yml").read_text(encoding="utf-8")
+        native = (ROOT / "project.native.yml").read_text(encoding="utf-8")
+        default = (ROOT / "project.yml").read_text(encoding="utf-8")
+
+        self.assertIn("-DJOI_LIVE2D", live2d)
+        self.assertIn("-DJOI_VRM", native)
+        self.assertIn("include:", native)
+        self.assertIn("project.live2d.yml", native, "VRM builds on top of the Live2D rung")
+
+        # The bottom rung must stay runtime-free: it is what a clone without the
+        # vendor SDKs builds, and admitting a flag here would make that clone
+        # fail to compile rather than fall back honestly.
+        self.assertNotIn("-DJOI_LIVE2D", default)
+        self.assertNotIn("-DJOI_VRM", default)
+
+    def test_a_rung_tells_the_test_target_what_it_admitted(self) -> None:
+        """A `#if JOI_*` in a test must mean what it says.
+
+        Targets compile their own sources, so `JoiMobileTests` does not inherit
+        the app target's `OTHER_SWIFT_FLAGS`. Until this was declared, every
+        `#if JOI_LIVE2D` in `Tests/Swift` evaluated to the default-spec answer on
+        every rung of the ladder — so a test written to check what the build
+        admitted checked a constant instead, and passed for the wrong reason.
+        """
+        for spec, flag in (("project.live2d.yml", "-DJOI_LIVE2D"), ("project.native.yml", "-DJOI_VRM")):
+            text = (ROOT / spec).read_text(encoding="utf-8")
+            _, targets = text.split("targets:", 1)
+            self.assertIn("JoiMobileTests:", targets, f"{spec} leaves the test target uninformed")
+            tests_block = targets.split("JoiMobileTests:", 1)[1]
+            self.assertIn(flag, tests_block, f"{spec} does not give the test target {flag}")
+
+    def test_the_required_check_lane_restores_the_native_build_it_replaces(self) -> None:
+        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        if "--spec project.yml" not in agents:
+            self.skipTest("the lane no longer generates from the default spec")
+        self.assertIn(
+            "Tools/run_native.sh",
+            agents,
+            "a lane that regenerates from the default spec must also put the native build back",
+        )
+        self.assertLess(
+            agents.index("--spec project.yml"),
+            agents.index("Tools/run_native.sh"),
+            "the restore step has to come after the generate that destroys it",
+        )
+
+    def test_the_restore_script_verifies_rather_than_assumes(self) -> None:
+        script = (ROOT / "Tools/run_native.sh").read_text(encoding="utf-8")
+        self.assertIn("project.native.yml", script)
+        # A build that silently lost a runtime is the whole failure mode, so the
+        # script may not simply exit 0 on a build that produced something.
+        self.assertIn("FrameworkMetallibs", script)
+        self.assertIn("set -euo pipefail", script)
 
 
 if __name__ == "__main__":

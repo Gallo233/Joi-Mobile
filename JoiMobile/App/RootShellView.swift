@@ -55,6 +55,9 @@ struct RootShellView: View {
         .sheet(isPresented: $model.isCharacterLibraryPresented) {
             CharacterLibraryView(model: model)
         }
+        .sheet(isPresented: $model.isSettingsPresented) {
+            SettingsView(model: model)
+        }
     }
 }
 

@@ -98,7 +98,7 @@ struct ChatStageView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button("个人面板", systemImage: "person.crop.circle") {}
+            Button("个人面板", systemImage: "person.crop.circle") { model.presentSettings() }
                 .labelStyle(.iconOnly)
                 .font(.title2)
                 .frame(width: 44, height: 44)

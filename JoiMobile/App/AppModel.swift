@@ -66,6 +66,9 @@ final class AppModel {
     @ObservationIgnored private let defaults: UserDefaults
     static let welcomeSeenKey = "joi.first-run.welcome-seen.v1"
     var isCharacterLibraryPresented = false
+    /// Settings (`G2-J5E`). Secondary by `JM-P0-001`, so it is a sheet over the
+    /// current surface and never a third tab.
+    var isSettingsPresented = false
     var characterLibraryState: CharacterLibraryState = .idle
     var installedCharacters: [CharacterPackageCatalogEntry] = []
 
@@ -234,6 +237,34 @@ final class AppModel {
     }
 
     func select(_ surface: PrimarySurface) { selectedSurface = surface }
+
+    // MARK: - Settings (`G2-J5E`)
+
+    func presentSettings() { isSettingsPresented = true }
+    func dismissSettings() { isSettingsPresented = false }
+
+    /// What Settings may report about this build.
+    ///
+    /// The renderer is read from the live activation rather than from the
+    /// catalog, so the diagnostic answers what is on the stage right now.
+    var settingsBuildFacts: SettingsBuildFacts {
+        SettingsBuildFacts.current.withActiveRenderer(stageContent?.renderer)
+    }
+
+    /// Follows a Settings row to the thing it names.
+    ///
+    /// Settings closes first: the destinations are themselves sheets, and a
+    /// stack of them would leave the user two dismissals from the app.
+    func openFromSettings(_ destination: SettingsDestination) {
+        isSettingsPresented = false
+        switch destination {
+        case .characterLibrary:
+            presentCharacterLibrary()
+        case .memoryList:
+            Task { await presentMemoryList() }
+        }
+    }
+
     func presentCharacterLibrary() { isCharacterLibraryPresented = true }
     func dismissCharacterLibrary() {
         cancelCharacterImport()

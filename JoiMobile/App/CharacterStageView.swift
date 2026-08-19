@@ -44,6 +44,91 @@ enum StageFraming: String, CaseIterable, Sendable {
     }
 }
 
+/// The native character runtimes this binary was compiled with.
+///
+/// This is decided by the spec ladder, not by configuration: `project.yml`
+/// admits neither runtime, `project.live2d.yml` adds Cubism, and
+/// `project.native.yml` adds VRM on top. A default-spec build is legitimate —
+/// it is exactly what a clone without the vendor SDKs gets — but it cannot draw
+/// an activated Live2D or VRM character.
+enum StageRuntimeAdmission {
+    static let live2d: Bool = {
+        #if JOI_LIVE2D
+        return true
+        #else
+        return false
+        #endif
+    }()
+
+    static let vrm: Bool = {
+        #if JOI_VRM
+        return true
+        #else
+        return false
+        #endif
+    }()
+
+    static func admits(_ kind: CharacterRendererKind) -> Bool {
+        switch kind {
+        // The silhouette is what a `static` package renders. Nothing is missing.
+        case .static: true
+        case .live2d: live2d
+        case .vrm: vrm
+        }
+    }
+}
+
+/// Why the stage is drawing a silhouette instead of the activated character.
+///
+/// Until this existed the stage had one fallback and it was silent, so three
+/// unrelated situations rendered identically: no character activated, a
+/// character this build cannot draw, and a runtime that failed to present one.
+/// Only the first is a healthy state. The second has now cost three debugging
+/// cycles — each spent rediscovering that a default-spec `xcodegen generate` had
+/// replaced the native project — because a fault that looks exactly like a
+/// healthy state is a fault nobody can see.
+enum StageFallbackReason: Equatable, Sendable {
+    /// The character needs a runtime this binary was not compiled with. Not a
+    /// defect in the package or the model: a property of the build.
+    case runtimeAbsentFromBuild(CharacterRendererKind)
+    /// The runtime is present, and could not present this model.
+    case runtimeCouldNotPresent(CharacterRendererKind)
+
+    var message: String {
+        switch self {
+        case .runtimeAbsentFromBuild(let kind):
+            String(localized: "此构建未包含 \(kind.stageName) 原生运行时，舞台以剪影代替角色。")
+        case .runtimeCouldNotPresent(let kind):
+            String(localized: "\(kind.stageName) 运行时未能显示这个角色，舞台以剪影代替。")
+        }
+    }
+
+    /// Pure, so the spec ladder cannot make it untestable: the compile-time
+    /// facts arrive as arguments rather than as reads, and every rung of the
+    /// ladder runs the same cases.
+    static func decide(
+        renderer: CharacterRendererKind?,
+        isAdmitted: Bool,
+        presentationFailed: Bool
+    ) -> StageFallbackReason? {
+        guard let renderer else { return nil }
+        guard isAdmitted else { return .runtimeAbsentFromBuild(renderer) }
+        return presentationFailed ? .runtimeCouldNotPresent(renderer) : nil
+    }
+}
+
+extension CharacterRendererKind {
+    /// The runtime's own name, spelled as the spec files and build logs spell
+    /// it, so the notice and the fix use the same word.
+    var stageName: String {
+        switch self {
+        case .static: "static"
+        case .live2d: "Live2D"
+        case .vrm: "VRM"
+        }
+    }
+}
+
 /// One request for the character to play a motion it declared.
 ///
 /// The sequence number is what makes a repeat visible: asking for `happy` twice
@@ -96,6 +181,21 @@ struct CharacterStageView: View {
                 : String(localized: "角色舞台，空闲")
         )
         .accessibilityValue(framing.label)
+        // The notice below is inside an ignored subtree, so without this the one
+        // fact worth announcing would be the one VoiceOver could not reach.
+        .accessibilityHint(fallbackReason?.message ?? "")
+    }
+
+    /// Why the silhouette is on screen, when it should not have to be.
+    ///
+    /// `nil` covers both healthy cases: a native surface is drawing, or no
+    /// character is activated and the silhouette is the honest answer.
+    var fallbackReason: StageFallbackReason? {
+        StageFallbackReason.decide(
+            renderer: stageContent?.renderer,
+            isAdmitted: stageContent.map { StageRuntimeAdmission.admits($0.renderer) } ?? true,
+            presentationFailed: nativeUnavailable
+        )
     }
 
     /// A native model is presented only when this build admitted the runtime and
@@ -168,6 +268,37 @@ struct CharacterStageView: View {
             .scaleEffect(framing.scale, anchor: framing.anchor)
             .animation(reduceMotion ? nil : .snappy(duration: 0.35), value: framing)
             .clipped()
+            // Applied after the scale effect, so the notice is not framed with
+            // the character: it is a statement about the build, not part of it.
+            .overlay(alignment: .top) {
+                if let fallbackReason {
+                    StageFallbackNotice(reason: fallbackReason)
+                        // Clears the floating header, which is drawn above this
+                        // layer by the Chat surface rather than inside it: safe
+                        // area, the title and the "本地会话" subtitle beneath it.
+                        .padding(.top, 132)
+                }
+            }
+    }
+}
+
+/// Says why the silhouette is there.
+///
+/// Deliberately plain and permanent rather than a toast: the condition it
+/// reports lasts as long as the build does, so something that faded would be
+/// worse than nothing at all.
+private struct StageFallbackNotice: View {
+    let reason: StageFallbackReason
+
+    var body: some View {
+        Text(reason.message)
+            .font(.footnote)
+            .multilineTextAlignment(.center)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(.horizontal, 32)
     }
 }
 

@@ -801,6 +801,45 @@ freshness beyond "this came with the pack". `FAIL-018` is partial too, for a
 reason worth stating — a correction has nothing to be submitted *to*, so there is
 no remote case, no acknowledgement and no pending status.
 
+### 6.20 G2-J5E — Settings, and the last dead control
+
+`G2-J5E` gives `JM-P0-018` an implementation. The profile control has been drawn
+on the Chat header since G1 with an empty action — the last dead control on a
+primary surface, after `G2-J2C` took the microphone — and PRD §6.4's eight
+Settings groups existed in no route, no view and no test.
+
+Three of the eight have something real behind them. The screen shows all eight
+anyway, because both alternatives are worse: hiding the empty groups makes the
+product look like it decided against them, and drawing a switch per group makes
+it look like they work. A group with nothing behind it is listed, is not a
+control, and says what is missing.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J5E-01` | The profile control opens Settings; Settings is a sheet over the current surface and never a third primary destination | App / `AppModel.presentSettings` | `SettingsTests` |
+| `J5E-02` | All eight PRD §6.4 groups are present, in the order the PRD names them, and no group is split across the screen | App / `SettingsGroup.allCases` | group-order test |
+| `J5E-03` | A row is tappable only when a destination exists. `SettingsDestination` may name only what is built, so an unbuilt group cannot acquire a control by accident | App / `SettingsRow.destination` | openable-groups test |
+| `J5E-04` | An unbuilt group names what is missing rather than rendering as disabled — "switched off" and "does not exist" are different claims | App / `SettingsCatalog` | unbuilt-group copy test |
+| `J5E-05` | Diagnostics report version, which native runtimes the build compiled, and the active character's renderer, and nothing else | App / `SettingsBuildFacts` | four-facts test |
+| `J5E-06` | PRD §6.4: diagnostics carry no credential, raw prompt, precise location, photo or memory value — checked against a model holding a real conversation | App / `SettingsCatalog.rows` | conversation-echo test |
+| `J5E-07` | Opening Settings changes no session state: surface, thread, transcript and character are untouched | App, CompanionCore / `CompanionSessionStore` | session-invariance test |
+| `J5E-08` | All visible copy lives in the editable `zh-Hans` catalog | App / `Localizable.xcstrings` | surface-copy guard |
+
+**The diagnostics row exists because of a bug it would have caught.** The spec
+ladder decides at compile time whether a build has the Live2D and VRM runtimes,
+`JoiMobile.xcodeproj` is generated and untracked, and the required check lane
+regenerates it from the rung that admits neither. A default-spec build then draws
+the static silhouette — correctly — and is indistinguishable from a broken model.
+That cost three debugging cycles before anything in the product could be asked
+which runtimes it had. `原生角色运行时` answers it in one line, and the stage
+itself now says the same thing where the silhouette is.
+
+`JM-P0-018` moves from **partial** to **implemented for what exists**, which is
+not the same as closed. Settings routes to the character library and to memory,
+and states the truth about the other five groups. Voice selection, appearance,
+in-app downloads, accounts, category sync and export are unimplemented and are
+listed as such; each closes with the feature it belongs to, not here.
+
 ## 7. Map, navigation and offline PoC
 
 - Wrap MapLibre Native in `MapSurfaceProvider`; it renders online styles and verified downloaded corridor resources but never owns route truth.
@@ -953,7 +992,7 @@ The first slice is complete when traceability, XcodeGen generation, generic simu
 | JM-P0-015 | Character library/import | CharacterRuntime, App | `CharacterPackageManifestV1`, `CharacterMotionV1` | `CharacterPackageInstallerTests`, `CharacterPackageValidatorTests` | G2/G3/G5 |
 | JM-P0-016 | Native renderer parity | CharacterRuntime | `CharacterRenderer`, compatibility receipt, `CharacterContentAccess.motions` | `Live2DNativeAdapterTests`, `VRMNativeAdapterTests`; device matrix remains G4 | G4/G5 |
 | JM-P0-017 | Package isolation/safety | CharacterRuntime, Contracts | package schema and validator | `CharacterPackageValidatorTests`, `RestrictedZIPConformanceTests`, `CrossPlatformConformanceTests` | G1/G3 |
-| JM-P0-018 | Secondary controls | App, SyncClient | settings routes, repositories | **partial** — character library and memory list exist and are covered by `AppModelTests` and `MemoryProposalTests`; no settings or account route exists | G2 |
+| JM-P0-018 | Secondary controls | App, SyncClient | `SettingsGroup`, `SettingsCatalog`, `SettingsBuildFacts` | `SettingsTests`, `AppModelTests`, `MemoryProposalTests`; **partial** — all eight PRD §6.4 groups are present and honest, three route to something real; voice, appearance, downloads, account, sync and export are stated as unimplemented | G2 |
 | JM-P0-019 | Optional category sync | SyncClient, Backend | `SyncGateway`, `MemorySyncRecordV1`, `CharacterPackageSyncRecordV1`, `LocationSyncAuthorizationV1` | `SyncConsentStoreTests`, `StateOwnerTests` location case; **no sync client or cursor/tombstone replay exists** | G3 |
 | JM-P0-020 | Editable Simplified-Chinese copy | App, all features, Backend | String Catalog, locale context and cache-key contract | `ContractArtifactTests` catalog and surface-copy cases | G1/G2 |
 | JM-P0-021 | Deferred experience hooks | App, all UI features | semantic labels, system text styles and motion-policy seams | shell hook smoke tests; full matrix deferred | G1 / later accessibility gate |

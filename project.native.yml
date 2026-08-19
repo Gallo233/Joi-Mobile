@@ -30,3 +30,11 @@ targets:
     dependencies:
       - package: VRMMetalKit
         product: VRMMetalKit
+  # Same reason as the Live2D rung: a test may not ask `#if JOI_VRM` unless the
+  # test target was actually told.
+  JoiMobileTests:
+    settings:
+      base:
+        OTHER_SWIFT_FLAGS:
+          - $(inherited)
+          - -DJOI_VRM

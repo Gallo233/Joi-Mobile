@@ -41,6 +41,17 @@ xcodebuild -project JoiMobile.xcodeproj -scheme JoiMobile -destination 'generic/
 swift test --package-path Packages/CompanionCore
 swift test --package-path Packages/CharacterRuntime
 swift test --package-path Packages/OfflinePack
+Tools/run_native.sh
 ```
+
+The last line is not optional, and it is not a convenience. `project.yml` is the
+bottom rung of the spec ladder and admits no vendor runtime, so the generate
+above replaces a native `JoiMobile.xcodeproj` with one that cannot draw a Live2D
+or VRM character, and the build that follows installs that app over the native
+one on the simulator. The character stage then shows its static silhouette,
+which is correct behaviour and looks exactly like a broken model — a trap that
+has cost three debugging cycles. `Tools/run_native.sh` puts the native build
+back. Skip it only when `Vendor/Live2D` and `Vendor/VRMMetalKit` are absent,
+which is the one case where there is nothing to restore.
 
 Record actual evidence and remaining device/legal gates in `docs/STATUS.md`. Record durable product/architecture choices in `docs/DECISIONS.md`; do not create separate PoC status documents.
