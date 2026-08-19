@@ -227,6 +227,15 @@ final class AppModel {
             threadID: threadID,
             sessionID: sessionID
         )
+        // Set after every stored property, because the player calls back into the
+        // owner and the owner does not exist until here (`G2-J5F`).
+        self.speechPlayer.onInterrupted = { [weak self] in
+            // A notification is not async, so the hop is unavoidable here. The
+            // player has already stopped synchronously by this point, so what
+            // this defers is the bookkeeping and not the silence.
+            guard let self else { return }
+            Task { await self.speechWasInterrupted() }
+        }
     }
 
     /// Dismisses the welcome for good. Reading it is not a requirement, so this
@@ -763,6 +772,22 @@ final class AppModel {
         }
         speechPlayer.speak(text)
         return generation
+    }
+
+    /// `FAIL-007` — the system took the audio away (`G2-J5F`).
+    ///
+    /// The player has already stopped. What is left is the part only the owner
+    /// can do: retire the cue, so `SpeechCoordinator` stops reporting a line
+    /// nobody is saying and a late completion for it is refused. The transcript
+    /// is untouched — an interruption is not a reason to lose accepted words —
+    /// and nothing is resumed.
+    /// `async` because the coordinator is an actor and retiring the cue has to
+    /// actually be done before anyone can be told it is. A fire-and-forget
+    /// `Task` here would leave a window in which `currentCue()` still names a
+    /// line nobody is saying, and `acceptsCompletion` would still accept one for
+    /// it — which is the exact property `JM-P0-007` asks of the owner.
+    func speechWasInterrupted() async {
+        await speechCoordinator.cancel(reason: .interrupted)
     }
 
     /// Asks the stage to play a declared motion. The name is semantic — `greet`,

@@ -49,16 +49,16 @@ STATUS: dict[str, tuple[str, str, list[str], str]] = {
     "FAIL-006": (
         "partial",
         "App",
-        ["VoiceInputTests"],
-        "A failed fetch leaves the turn's text intact and logs it, but there is no named "
-        "playback-failure state and no retry after route or interruption recovery.",
+        ["VoiceInputTests", "SpeechInterruptionTests"],
+        "A failed fetch leaves the turn's text intact and logs it, and an interruption now "
+        "ends the line cleanly so the controls stay usable. There is still no named "
+        "playback-failure state on screen and no retry offered after recovery.",
     ),
     "FAIL-007": (
-        "absent",
+        "implemented",
         "App",
-        [],
-        "No AVAudioSession interruption observer exists. Call, Siri and headset-loss "
-        "behaviour is unhandled and is device-only evidence (G4).",
+        ["SpeechInterruptionTests"],
+        "",
     ),
     "FAIL-008": ("implemented", "App", ["MemoryProposalTests"], ""),
     "FAIL-009": ("absent", "SyncClient", [], "No sync client, cursor or conflict resolution exists."),

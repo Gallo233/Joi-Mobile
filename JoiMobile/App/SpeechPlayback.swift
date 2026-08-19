@@ -2,6 +2,7 @@ import AVFoundation
 import Foundation
 import OSLog
 import QuartzCore
+import UIKit
 
 private let speechLog = Logger(subsystem: "com.joi.mobile", category: "speech")
 
@@ -41,9 +42,20 @@ final class SpeechPlayer: LipSyncAmplitudeSource {
     @ObservationIgnored private var lastPoll: CFTimeInterval?
     @ObservationIgnored private var sessionActivated = false
 
+    /// Called when the system took the audio away (`G2-J5F`).
+    ///
+    /// A closure rather than a direct call into the coordinator, because
+    /// `SpeechCoordinator` is the unique owner of who may talk and this type is
+    /// not it: the player knows the audio stopped, and the owner decides what
+    /// that means for the cue.
+    @ObservationIgnored var onInterrupted: (@MainActor () -> Void)?
+
+    @ObservationIgnored private let observers = ObserverTokens()
+
     init(endpoint: URL, session: URLSession = .shared) {
         self.endpoint = endpoint
         self.session = session
+        observeAudioInterruptions()
     }
 
     var currentAmplitude: Float {
@@ -112,6 +124,90 @@ final class SpeechPlayer: LipSyncAmplitudeSource {
         } catch {
             speechLog.error("speech unavailable: transport failed")
             return nil
+        }
+    }
+
+    /// Subscribes to the three ways the system takes audio away.
+    ///
+    /// Registered at construction rather than when a line starts: an interruption
+    /// that arrives in the same runloop turn as playback would otherwise be
+    /// missed, and an unregistered observer costs nothing while nothing is
+    /// speaking because the policy is inert without a line.
+    private func observeAudioInterruptions() {
+        let center = NotificationCenter.default
+        let session = AVAudioSession.sharedInstance()
+
+        // Each block reduces the notification to plain numbers *before* hopping
+        // to the main actor. `Notification` and its `userInfo` are not
+        // `Sendable`, and under Swift 6 capturing one into an actor-isolated
+        // closure is an error rather than a warning — correctly, since only
+        // these scalars are ever read.
+        observers.keep(
+            center.addObserver(
+                forName: AVAudioSession.interruptionNotification,
+                object: session,
+                queue: .main
+            ) { [weak self] note in
+                let rawType = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+                let rawOptions = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    guard let type = rawType.flatMap(AVAudioSession.InterruptionType.init(rawValue:)) else { return }
+                    switch type {
+                    case .began:
+                        self.handle(.interruptionBegan)
+                    case .ended:
+                        let suggests = rawOptions
+                            .map(AVAudioSession.InterruptionOptions.init(rawValue:))?
+                            .contains(.shouldResume) ?? false
+                        self.handle(.interruptionEnded(systemSuggestsResume: suggests))
+                    @unknown default:
+                        // A kind this build does not know is still an
+                        // interruption; ending the line is the safe reading.
+                        self.handle(.interruptionBegan)
+                    }
+                }
+            }
+        )
+
+        observers.keep(
+            center.addObserver(
+                forName: AVAudioSession.routeChangeNotification,
+                object: session,
+                queue: .main
+            ) { [weak self] note in
+                let rawReason = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    let reason = rawReason.flatMap(AVAudioSession.RouteChangeReason.init(rawValue:))
+                    self.handle(.routeChanged(outputDeviceLost: reason == .oldDeviceUnavailable))
+                }
+            }
+        )
+
+        observers.keep(
+            center.addObserver(
+                forName: UIApplication.willResignActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.handle(.leftForeground) }
+            }
+        )
+    }
+
+    /// Applies the policy. Kept separate from the observers so a test can drive
+    /// the same path the system drives without posting a notification.
+    func handle(_ event: SpeechInterruptionEvent) {
+        switch SpeechInterruptionPolicy.decide(event, isSpeaking: isSpeaking) {
+        case .ignore:
+            return
+        case .endLine:
+            speechLog.notice("speech interrupted: the system took the audio")
+            // `stop()` and not `finishPlayback()`: this line did not finish, and
+            // logging a peak amplitude for it would record a completed line.
+            stop()
+            onInterrupted?()
         }
     }
 
@@ -184,5 +280,24 @@ private final class PlaybackDelegate: NSObject, AVAudioPlayerDelegate {
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         let finish = onFinish
         Task { @MainActor in finish() }
+    }
+}
+
+/// Holds notification tokens and removes them when its owner goes.
+///
+/// Separate from `SpeechPlayer` because that type is `@MainActor` while `deinit`
+/// is nonisolated, so a deinit there may not touch its stored properties. This
+/// object holds nothing but opaque tokens: `keep` is called only from the
+/// owner's initialiser and `deinit` runs exactly once, which is what makes the
+/// unchecked conformance true rather than merely convenient.
+private final class ObserverTokens: @unchecked Sendable {
+    private var tokens: [any NSObjectProtocol] = []
+
+    func keep(_ token: any NSObjectProtocol) { tokens.append(token) }
+
+    deinit {
+        for token in tokens {
+            NotificationCenter.default.removeObserver(token)
+        }
     }
 }

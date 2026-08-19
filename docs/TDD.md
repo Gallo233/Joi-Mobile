@@ -840,6 +840,56 @@ and states the truth about the other five groups. Voice selection, appearance,
 in-app downloads, accounts, category sync and export are unimplemented and are
 listed as such; each closes with the feature it belongs to, not here.
 
+### 6.21 G2-J5F — An interrupted line ends, and the app knows it did
+
+`G2-J5F` closes `FAIL-007`, the last absent failure state that belongs to G2
+rather than to an unbuilt feature. `SpeechCancellationReason.interrupted` has
+been in the frozen contract since G1 and nothing produced it: nothing in the
+product observed an audio interruption at all.
+
+The consequence was worse than a truncated line. `AVAudioPlayer` **pauses** on
+interruption without calling `audioPlayerDidFinishPlaying`, so
+`SpeechPlayer.isSpeaking` stayed `true` for the rest of the app's life — and
+`AppModel.beginVoiceInput` refuses to open the microphone while the character is
+speaking. One phone call during one spoken line left push-to-talk dead until the
+character happened to speak again.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J5F-01` | `FAIL-007`: a session interruption ends the line — the player stops, `isSpeaking` is false, and the microphone can be opened again | App / `SpeechInterruptionPolicy` | `SpeechInterruptionTests` |
+| `J5F-02` | Losing the output device ends the line; any other route change does not. Unplugging headphones may not continue the character's voice out of the speaker | App / `SpeechInterruptionEvent.routeChanged` | route-change test |
+| `J5F-03` | Leaving the foreground ends the line. There is no background-audio entitlement, so this is the state following the fact rather than causing it | App / `SpeechInterruptionEvent.leftForeground` | lifecycle test |
+| `J5F-04` | A line is **never** resumed, whatever `AVAudioSession` suggests with `.shouldResume` | App / `SpeechInterruptionPolicy.decide` | resume-hint test |
+| `J5F-05` | The owner is told, not only the player: the cue is retired, so `currentCue()` names nobody and a late completion for that generation is refused | CompanionCore, App / `SpeechCoordinator.cancel(reason: .interrupted)` | cue-retirement and late-completion tests |
+| `J5F-06` | An interruption leaves the accepted transcript exactly as it was | App / `AppModel.chatTranscript` | transcript-invariance test |
+| `J5F-07` | Every event is inert with no line in the air, so an idle app never cancels a cue that does not exist | App / `SpeechInterruptionPolicy.decide` | idle test |
+
+**Nothing is resumed, and that is the decision rather than an omission.** PRD §7
+requires current-state validation before resume, and by the time an interruption
+ends there is nothing left to validate: the line was ended when the interruption
+began, and the request, the character and the walk it belonged to may all have
+moved on. Resuming would be the one case `JM-P0-007` names outright — stale
+synthesis speaking over current state. The transcript still carries the words, so
+the cost of not resuming is a line the user can read instead of hear.
+
+**The policy is a value type for the same reason `MouthOpening` is.** Interruption
+behaviour is otherwise device-only evidence: no simulator raises a phone call.
+Reducing `AVAudioSession`'s notifications to five named events makes every rule
+executable on any machine, and leaves only the translation — notification to
+event — as the part that still wants a device.
+
+Writing `J5F-05` found a real defect in the first version of this slice. Retiring
+the cue was a fire-and-forget `Task`, which left a window where `currentCue()`
+still named a line nobody was saying and `acceptsCompletion` still accepted one
+for it. `speechWasInterrupted()` is `async` and awaits the actor, so the owner's
+answer is true as soon as anyone can ask.
+
+`FAIL-007` moves from absent to **implemented**; `FAIL-006` stays **partial** and
+its gap is narrower: an interruption now ends the line cleanly and the controls
+stay usable, but there is still no named playback-failure state on screen and no
+retry offered after recovery. Device evidence for a real call, a real Siri
+invocation and a real headset unplug remains G4.
+
 ## 7. Map, navigation and offline PoC
 
 - Wrap MapLibre Native in `MapSurfaceProvider`; it renders online styles and verified downloaded corridor resources but never owns route truth.
@@ -981,7 +1031,7 @@ The first slice is complete when traceability, XcodeGen generation, generic simu
 | JM-P0-004 | Official AI boundary | ChatFeature, Backend | OpenAPI `/v1/chat/streams`, `SSEChatGateway`, `ChatBackendEndpoint` | `SSEChatGatewayTests`, `MockBackendIntegrationTests`, secret scan | G1/G3 |
 | JM-P0-005 | Layered local memory | CompanionCore, App, SyncClient | `MemoryRepository`, `MemoryProposalV1`, `MemoryRecordV1` | `MemoryProposalTests`, `StateOwnerTests` location case | G3 |
 | JM-P0-006 | Cross-surface continuity | CompanionCore, App | `CompanionSessionStore`, `JourneyContextSnapshot`, `JourneyUseReceiptV1` | `JourneyConsentTests`, `JourneyAttachmentTests` | G1/G3 |
-| JM-P0-007 | Speech coordination | CompanionCore, App | `SpeechCoordinator`, `MouthOpening` | `SpeechCoordinationTests`, `MouthOpeningTests` | G2/G4 |
+| JM-P0-007 | Speech coordination | CompanionCore, App | `SpeechCoordinator`, `MouthOpening`, `SpeechInterruptionPolicy` | `SpeechCoordinationTests`, `MouthOpeningTests`, `SpeechInterruptionTests`; real call/Siri/headset evidence remains G4 | G2/G4 |
 | JM-P0-008 | Persistent Map experience | MapFeature, App | `JourneyContextStore`, drawer state | `MapExperienceStateTests`, `CachedWalkTests` | G2/G4 |
 | JM-P0-009 | Arrive-and-tell | OfflinePack, App | `PlaceResolver`, `PlaceProposal`, `ConfirmedPlace` | `PlaceResolverTests`, `ArriveAndTellTests`; **partial** — cached-route places only, no online lookup; GPS field script remains G4 | G2/G4 |
 | JM-P0-010 | See-and-ask | MapFeature, Backend | vision upload contract | **not implemented** — no capture or recognition path exists | G3/G4 |
@@ -996,7 +1046,7 @@ The first slice is complete when traceability, XcodeGen generation, generic simu
 | JM-P0-019 | Optional category sync | SyncClient, Backend | `SyncGateway`, `MemorySyncRecordV1`, `CharacterPackageSyncRecordV1`, `LocationSyncAuthorizationV1` | `SyncConsentStoreTests`, `StateOwnerTests` location case; **no sync client or cursor/tombstone replay exists** | G3 |
 | JM-P0-020 | Editable Simplified-Chinese copy | App, all features, Backend | String Catalog, locale context and cache-key contract | `ContractArtifactTests` catalog and surface-copy cases | G1/G2 |
 | JM-P0-021 | Deferred experience hooks | App, all UI features | semantic labels, system text styles and motion-policy seams | shell hook smoke tests; full matrix deferred | G1 / later accessibility gate |
-| JM-P0-022 | Failure/recovery contract | all modules | typed error/state enums, `Contracts/failure-states.json` | `FailureStateTests`, `ContractArtifactTests` corpus cases, `AppModelTests`, `ChatSessionControllerTests`; **partial** — 14 of 32 states implemented, 5 partial, 13 absent | G2/G3 |
+| JM-P0-022 | Failure/recovery contract | all modules | typed error/state enums, `Contracts/failure-states.json` | `FailureStateTests`, `ContractArtifactTests` corpus cases, `AppModelTests`, `ChatSessionControllerTests`; **partial** — 17 of 32 states implemented, 7 partial, 8 absent, and every remaining absent one belongs to a feature that does not exist yet (see-and-ask, sync, accounts) | G2/G3 |
 | JM-P0-023 | Data-purpose governance | App, Backend, SyncClient | consent/media receipts, export and deletion request/status contracts | **partial** — local memory deletion is covered by `MemoryProposalTests`; no export, no server acknowledgement | G3/G6 |
 | JM-P0-024 | Privacy-safe quality metrics | App, Backend | analytics allowlist | **not implemented** — no analytics exist; `ProviderConfidentialityTests` covers only proxy redaction | G3/G6 |
 

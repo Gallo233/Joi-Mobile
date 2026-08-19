@@ -63,18 +63,20 @@
       "status": "partial",
       "owner": "App",
       "evidence": [
-        "VoiceInputTests"
+        "VoiceInputTests",
+        "SpeechInterruptionTests"
       ],
-      "gap": "A failed fetch leaves the turn's text intact and logs it, but there is no named playback-failure state and no retry after route or interruption recovery."
+      "gap": "A failed fetch leaves the turn's text intact and logs it, and an interruption now ends the line cleanly so the controls stay usable. There is still no named playback-failure state on screen and no retry offered after recovery."
     },
     {
       "id": "FAIL-007",
       "state": "audioInterrupted",
       "cancellation": "Stop/pause current generation and revalidate before explicit resume",
-      "status": "absent",
+      "status": "implemented",
       "owner": "App",
-      "evidence": [],
-      "gap": "No AVAudioSession interruption observer exists. Call, Siri and headset-loss behaviour is unhandled and is device-only evidence (G4)."
+      "evidence": [
+        "SpeechInterruptionTests"
+      ]
     },
     {
       "id": "FAIL-008",
