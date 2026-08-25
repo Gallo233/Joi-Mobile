@@ -16,7 +16,7 @@ private enum MapCameraMode {
 struct NativeMapSurface: View {
     let characterName: String
     @Bindable var model: AppModel
-    let onImportPack: () -> Void
+    let onOpenRouteLibrary: () -> Void
 
     @State private var cameraPosition: MapCameraPosition = .automatic
     @State private var cameraMode: MapCameraMode = .route
@@ -416,8 +416,8 @@ struct NativeMapSurface: View {
                 }
             }
             if !model.isWalking {
-                drawerButton(String(localized: "导入路线包"), systemImage: "square.and.arrow.down") {
-                    onImportPack()
+                drawerButton(String(localized: "文化路线"), systemImage: "map.fill") {
+                    onOpenRouteLibrary()
                 }
             }
         }

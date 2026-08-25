@@ -4,6 +4,17 @@ Last updated: 2026-08-25
 
 ## Current phase
 
+`G2-J5O` turns the travel-pack store from a hidden implementation detail into an
+explicit Map choice. “文化路线” now lists the labelled bundled sample and every
+installed route identity, marks the current route and shows version, source
+revision count and self-declared rights. A list row is inventory only: selection
+reopens the exact sealed `packID + version` and repeats all integrity/content
+checks before changing the walk. Refusal or an active walk keeps the current
+route; choosing the sample clears the active pointer without deleting downloads.
+Opening the library requests neither location nor network. This closes Journey
+3's selection of an existing cultural route, not place resolution, route
+creation, download, publisher authenticity or device/field navigation. DEC-048.
+
 `G2-J5N` turns a selected Apple search marker into an explicit, usable driving
 destination without making it Joi route truth. The result drawer now says it is
 not a stop on the current cultural route, replaces the misleading “开始步行”
@@ -31,7 +42,12 @@ still cannot become a sourced Joi place or cultural route. DEC-046.
 
 `G2-J5K` replaces Map's route-shaped placeholder with a usable native MapKit surface. The verified or bundled walk now appears over Apple's interactive street and POI map with the full route, completed segment, numbered stops and the accepted walking position; people can pan and zoom, restore the route overview, follow their current position after starting, inspect a selected map feature, review the itinerary, ask in Chat and end the walk without leaving the surface. The persistent drawer keeps route state and the primary action reachable instead of compressing them into one row. The boundary is explicit: the route, stops, narration, progress and return-to-route guidance are cached Joi data, while Apple's basemap needs a network connection. Entering Map still requests no location; location starts only with the walk and is retired when it ends. Search, arbitrary route planning, turn-by-turn driving, downloadable/offline basemap tiles and a production MapLibre/Ferrostar integration remain outside this slice. DEC-044.
 
-G1 deterministic foundation and the bounded `G2-J1A` preview slice are published to the private GitHub repository `Gallo233/Joi-Mobile`. The local `G2-J1B` import/install/activation/removal implementation has closed its first Closeout rework and is a Director re-review candidate on branch `codex/j1b-character-installer`. No deployment, cloud resource, vendor contact, license application, App Store submission or J1B remote push has been made.
+The current completed iOS/contract/documentation work through `G2-J5N`, including
+the `G2-J1B` re-review candidate, is published to the private GitHub repository
+`Gallo233/Joi-Mobile` on `codex/j1b-character-installer` at catch-up commit
+`5e09efc`. The unfinished Android geometry spike remains local and uncommitted.
+No deployment, cloud resource, vendor contact, license application or App Store
+submission has been made.
 
 `G2-J5J` closes the persistence gap `G2-J5I` exposed: the travel-pack store survived a process, but Map forgot which verified walk was active and returned to the bundled sample. A successful import now remembers only the exact `packID + version`; launch reopens that sealed identity and repeats rights/expiry, hash, undeclared-content and route-narrative checks before using it. Missing or changed bytes leave the sample in place, clear the stale pointer and explain the fallback once. Progress, location and journey context remain deliberately transient, and restore never starts location. This pass also closed two installer path defects: the two manifest fields used in the store directory name were only checked for non-emptiness, and a symlink to a same-prefix sibling such as `candidate-escape` passed the old lexical containment check. DEC-043.
 
@@ -148,6 +164,26 @@ On 2026-08-12 the J1B candidate was independently re-verified on this workstatio
 | Trust & Safety | Approved | A second confirmation is mandatory; cancel is zero-call; no transcript, memory or Joi-held location travels. Veto retained. |
 | Map / Offline | Approved with conditions | Driving is external; cached walking remains in Joi. The result is never promoted to a confirmed stop, source or offline route. |
 | Quality & Release | Approved with conditions | Once-only, invalid, refusal/retry and cancellation tests, failure-corpus closure, simulator UI and final native restore are required; device/system-provider evidence remains open. |
+
+### G2-J5O Studio brief
+
+- Outcome: let a person browse and choose an existing cultural route from Map, including a deliberate return to the labelled sample, without trusting an inventory row or changing a route during a walk.
+- Crew: sequential Studio Director plus Product, Technical, Content & Trust, Trust & Safety, Map/Offline and Quality passes; the Studio integrator is the sole writer and no subagent was used at the user's request.
+- Ownership: App owns the inventory projection, choice orchestration, route-library UI and editable `zh-Hans`; `TravelPackInstaller` remains the sealed-store verifier and `JourneyContextStore` the only journey owner. Public contracts and `project.yml` are frozen.
+- Privacy/safety boundary: listing reads local summaries only; selection re-verifies exact sealed content; neither action requests location, network, provider access or deletion. Import keeps its existing security-scoped folder boundary.
+- Recovery: tampered/unreadable/refused rows keep the current route; active walks refuse route changes; choosing the sample clears only the active pointer and retains installed packs.
+- Required evidence: exact-identity/relaunch, tamper, sample-retention and active-walk tests; catalog/copy guards; simulator bidirectional switch and visual review; full build/package/Python lane; final native-runtime restore.
+
+### G2-J5O Scheme decisions
+
+| Director | Decision | Conditions / owner |
+|---|---|---|
+| Product Design | Approved with conditions | Route library must be secondary, show current state, keep import reachable and dismiss only after a successful switch; compact and complete accessibility review remain deferred. |
+| Technical | Approved | Reuse `InstalledTravelPackSummary` for inventory and `restore` for authority; no new public contract or state owner. |
+| Content & Trust | Approved with conditions | Sample status, inventory-vs-verification, rights/source facts and Apple-result boundary must be visible in editable `zh-Hans`; publisher authenticity remains open. |
+| Trust & Safety | Approved | Local read/reverify only; no location/network/upload/delete; invalid content fails closed and preserves the active route. Veto retained. |
+| Map / Offline | Approved with conditions | Switching is idle-only and resets route-scoped projections; downloads, signatures, offline basemap and field navigation remain open. |
+| Quality & Release | Approved with conditions | Negative-path tests, copy guard, simulator visual flow, full required lane and final `Tools/run_native.sh` are mandatory; device evidence remains open. |
 
 ## Scheme gates
 
@@ -382,6 +418,10 @@ G0 is closed with no `Rework` or `Blocked` decision. Public contract implementat
 | 2026-08-25 | `G2-J5N` visual QA found disclosure below the useful viewport | **Fail before fix**, then pass | The first result drawer duplicated name/address already shown in the Map header, leaving the non-cultural-route/provider boundary outside the default viewport; after removing the duplicate, the long `Label` still existed only in the accessibility tree until it received a constrained multiline container. The final drawer gives the boundary its own readable information block while keeping return/import and the driving primary action visible. Compact devices, long localized strings and complete Dynamic Type/VoiceOver/Reduce Motion remain deferred gates. |
 | 2026-08-25 | Focused `G2-J5N` verification and failure corpus | Pass | `SystemMapHandoffTests` 4, `MapSearchTests` 8 and `MapPresentationTests` 5: **17 tests**, 0 failures. Proposal/cancel zero-call, exact once-only destination, invalid-coordinate refusal, system-open refusal/retry, search cancellation and viewport geometry pass. The corpus moves `FAIL-028` from absent to implemented: **20 implemented, 5 partial, 7 absent**. Catalog JSON, visible-copy guard and 24-P0 PRD/TDD trace pass. |
 | 2026-08-25 | Full lane after `G2-J5N` | Pass | Default XcodeGen and generic simulator build pass; `JoiMobileTests` **201 tests**, 1 host-condition skip, 0 failures on `iPhone 17 Pro`; six package suites **179 tests**, 7 conditional skips (CompanionCore 21, CharacterRuntime 79, ChatFeature 27, MapFeature 1, OfflinePack 50, SyncClient 1); Python `Tests/` 44 and `Backend/` 16. `Tools/run_native.sh` regenerated the native project, built, installed and launched the Live2D + VRM app. Simulator only — no device, location, field, full accessibility, energy, thermal, Apple Maps SLA or release claim. |
+| 2026-08-25 | `G2-J5O` installed cultural-route choice on the running app | Pass, simulator/local-store evidence | Map's new “文化路线” sheet listed the bundled sample and a sealed test route, marked the current route and exposed its version, one source revision and rights declaration. Selecting the sample dismissed to its three-stop Map without deleting the installed row; reopening marked the sample current, and selecting the installed route re-verified it, dismissed and restored its two-stop Map. No location prompt or provider request appeared. This proves simulator UI/local state, not package authenticity, device GPS or field navigation. |
+| 2026-08-25 | `G2-J5O` visual QA found current-route trust facts faded | **Fail before fix**, then pass | The first current row used SwiftUI `.disabled`, which faded its title, version and rights to poor contrast. Current and unreadable rows are now non-button presentations instead of disabled buttons; only actual route choices are buttons. The final current row keeps normal text contrast and a separate checkmark. Compact devices and complete Dynamic Type/VoiceOver/Reduce Motion remain deferred. |
+| 2026-08-25 | Focused `G2-J5O` verification | Pass | `TravelPackImportTests` **14 tests**, 0 failures: four new cases cover exact installed identity selection/relaunch, tampered listed-content refusal with current-route preservation, sample-pointer clearing without deletion, and active-walk refusal. Generated-project compile, catalog JSON and the route-library surface-copy guard pass. |
+| 2026-08-25 | Full lane after `G2-J5O` | Pass | `check_prd_tdd.py` traces 24 P0 requirements; default XcodeGen and generic simulator build pass; `JoiMobileTests` **205 tests** total (**204 passed, 1 host-condition skip**) on `iPhone 17 Pro`; six package suites **179 tests**, 7 conditional skips (CompanionCore 21, CharacterRuntime 79, ChatFeature 27, MapFeature 1, OfflinePack 50, SyncClient 1); Python `Tests/` 44 and `Backend/` 16. `Tools/run_native.sh` finally regenerated the native project, verified its runtime resources, installed and launched the Live2D + VRM app. Simulator/local-store evidence only — no device, GPS, flight-mode field, full accessibility, publisher-authenticity, energy, thermal or release claim. |
 
 That sentence described the first slice, and most of it has since been overtaken: the composer, the push-to-talk button, the character runtime surface, the Map card, the source button and — as of `G2-J5E` — the profile control are all real. In-app navigation beyond a cached corridor, accounts, sync and a production backend are still absent; driving can now leave through the explicit system-Maps handoff, and the remaining surfaces say what is missing rather than standing in for it.
 
@@ -522,6 +562,22 @@ Studio Closeout is **Approved with conditions** for `G2-J5N`. `FAIL-028` and the
 external driving-destination dead end are closed for the tested simulator path.
 Journey 3 remains partial for typed contextual offers, sourced Joi identity and
 cultural-route creation; this is not release approval.
+
+### G2-J5O Closeout
+
+| Director | Closeout decision | Remaining condition |
+|---|---|---|
+| Product Design | Approved with conditions | Existing cultural routes are discoverable/current/selectable and import remains reachable; compact-device and full accessibility review remain. |
+| Technical | Approved | Inventory summaries remain non-authoritative, every choice crosses exact `restore`, all route-scoped projections reset, and no public contract or duplicate owner was added. |
+| Content & Trust | Approved with conditions | Sample status, version/source/rights facts and inventory/Apple-result disclaimers are visible in editable `zh-Hans`; publisher signatures and production cultural-content review remain G5/G6. |
+| Trust & Safety | Approved | Listing and switching are local-only; tamper and active-walk paths fail closed; sample selection removes no installed data and no provider/location/upload/delete boundary moved. |
+| Map / Offline | Approved with conditions | Existing verified cultural-route selection is usable and idle-only; download, authored route creation, offline basemap and device field walk remain open. |
+| Quality & Release | Approved with conditions | 205 App tests, 179 package tests, 60 Python tests, trace/copy/catalog guards, generic build, native restore and bidirectional simulator flow pass; real-device/accessibility gates remain open. |
+
+Studio Closeout is **Approved with conditions** for `G2-J5O`, pending only the
+recorded release/device gates rather than slice rework. Journey 3's existing-route
+choice is closed; typed place intent, sourced place resolution and new cultural
+route creation remain partial. This is not release approval.
 
 Independent Closeout found no `Rework` or `Blocked` decision for this bounded slice. `G2-J1A` is closed with conditions. This does not close complete G2, `JM-P0-015`, `JM-P0-017`, G4 or G5.
 

@@ -1186,8 +1186,34 @@ its name and coordinate to Apple Maps. Joi never plans or records that route.
 This closes `FAIL-028` and makes Journey 3's external driving-destination branch
 functional. It does not turn an Apple result into a Joi place, create an in-app
 cultural route, implement the backend `/v1/routes` planner or prove device GPS,
-field behavior or Apple Maps availability. Typed contextual offers and cultural
-route selection remain open. DEC-047.
+field behavior or Apple Maps availability. Typed contextual offers and creating
+a cultural route from resolved place intent remain open. Selecting an
+already-installed cultural route is closed by `G2-J5O` below. DEC-047.
+
+### 6.30 G2-J5O — Choose an installed cultural route, not a hidden active pointer
+
+`G2-J5J` could restore the one pack last used, and `G2-J5I` could inventory every
+pack in the local store, but neither fact was reachable from Map. A second valid
+route could be installed only by importing it again; the person could not see
+what was already present, return to the bundled demonstration or choose which
+verified story to walk. `G2-J5O` adds that missing product boundary without
+promoting an inventory manifest to trusted route content.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J5O-01` | Idle Map exposes a secondary “文化路线” sheet listing the explicitly labelled bundled sample and every installed `packID + version`, with the current choice visible | App / `NativeMapSurface`, `TravelRouteLibraryView` | simulator entry/list/current-state flow |
+| `J5O-02` | Opening the sheet reads local manifest summaries only and starts no location, network request or walk; choosing an installed row reopens that exact identity through `TravelPackInstaller.restore` before any route changes | App + OfflinePack / `refreshInstalledTravelPacks`, `selectInstalledTravelPack` | exact identity/relaunch test and interface review |
+| `J5O-03` | A successful choice atomically replaces the cached walk, clears route-scoped progress/place/attachment/recap projections, remembers the exact identity and remains active after relaunch without starting location | App / `useInstalledTravelPack`, `StoredTravelPackSelection` | selection/relaunch test and simulator bidirectional switch |
+| `J5O-04` | A changed, expired, incomplete or otherwise refused row never replaces the current route; an unreadable-title row remains an honest inventory fact but is not selectable | App + OfflinePack / restore refusal, library row states | tampered-listed-pack test and failure-copy review |
+| `J5O-05` | Neither import nor selection can swap route geometry, narrative or journey truth under an active walk | App / active-walk guard | import and selection refusal tests |
+| `J5O-06` | Choosing the sample clears the active pointer without deleting installed packs, and labels it as demonstration content rather than downloaded/rights-verified cultural content | App / `selectBundledSampleWalk` | sample pointer/inventory/relaunch test and simulator flow |
+| `J5O-07` | Installed rows expose version, source-revision count and rights declaration; copy says listing is not verification and Apple search results do not become Joi cultural routes | App / route-library trust copy | Content/Trust review and simulator visual inspection |
+| `J5O-08` | New visible copy remains editable `zh-Hans`, and the surface-copy guard includes the new route-library file | App + Tests / `Localizable.xcstrings`, `test_contracts.py` | catalog parse and surface-copy guard |
+
+This closes Journey 3's “choose an existing cultural route” branch. It does not
+download a route, prove publisher authenticity, resolve an Apple result into a
+sourced Joi place, create a new cultural route, call `/v1/routes`, add offline
+basemap tiles or prove device/field navigation. DEC-048.
 
 ## 7. Map, navigation and offline PoC
 
@@ -1339,7 +1365,7 @@ The first slice is complete when traceability, XcodeGen generation, generic simu
 | JM-P0-011 | Cultural walking navigation | MapFeature, Backend | `NavigationProvider`, route API | `RouteProgressEngineTests`, `CachedWalkTests`; **no Ferrostar integration**, outdoor walk remains G4 | G2/G4 |
 | JM-P0-012 | Routes-as-narrative | OfflinePack, App | `RouteStop`, `RouteNarrative`, `RecapEntry` | `RouteNarrativeTests`, `RouteStoryTests` | G2 |
 | JM-P0-013 | Trusted sources | CompanionCore, MapFeature, App | `SourceProjectionV1`, `SourceEligibility`, `ClaimSupport` | `SourceEligibilityTests`, `SourceProjectionTests`; **partial** — no backend produces sources yet | G2/G3 |
-| JM-P0-014 | Offline travel pack | OfflinePack, App | `TravelPackManifestV1`, `TravelPackContentV1`, `TravelPackInstaller` | `TravelPackInstallerTests`, `TravelPackImportTests`, `OfflinePackVerifierTests`; install and relaunch restoration covered; **partial** — no signature and no download; flight-mode walk remains G4 | G2/G4/G5 |
+| JM-P0-014 | Offline travel pack | OfflinePack, App | `TravelPackManifestV1`, `TravelPackContentV1`, `TravelPackInstaller` | `TravelPackInstallerTests`, `TravelPackImportTests`, `OfflinePackVerifierTests`; install, inventory selection, exact revalidation and relaunch restoration covered; **partial** — no signature and no download; flight-mode walk remains G4 | G2/G4/G5 |
 | JM-P0-015 | Character library/import | CharacterRuntime, App | `CharacterPackageManifestV1`, `CharacterMotionV1` | `CharacterPackageInstallerTests`, `CharacterPackageValidatorTests` | G2/G3/G5 |
 | JM-P0-016 | Native renderer parity | CharacterRuntime | `CharacterRenderer`, compatibility receipt, `CharacterContentAccess.motions` | `Live2DNativeAdapterTests`, `VRMNativeAdapterTests`; device matrix remains G4 | G4/G5 |
 | JM-P0-017 | Package isolation/safety | CharacterRuntime, Contracts | package schema and validator | `CharacterPackageValidatorTests`, `RestrictedZIPConformanceTests`, `CrossPlatformConformanceTests` | G1/G3 |

@@ -1,7 +1,6 @@
 import CompanionCore
 import OfflinePack
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// The Map surface: one cached cultural walk, how far along it you are, and the
 /// way back when you leave it.
@@ -11,21 +10,16 @@ import UniformTypeIdentifiers
 struct MapExperienceView: View {
     let characterName: String
     @Bindable var model: AppModel
-    @State private var isImportingPack = false
+    @State private var isRouteLibraryPresented = false
 
     var body: some View {
         NativeMapSurface(
             characterName: characterName,
             model: model,
-            onImportPack: { isImportingPack = true }
+            onOpenRouteLibrary: { isRouteLibraryPresented = true }
         )
-        .fileImporter(
-            isPresented: $isImportingPack,
-            allowedContentTypes: [.folder],
-            allowsMultipleSelection: false
-        ) { result in
-            guard case let .success(urls) = result, let url = urls.first else { return }
-            Task { await model.importTravelPack(at: url) }
+        .sheet(isPresented: $isRouteLibraryPresented) {
+            TravelRouteLibraryView(model: model)
         }
         .sheet(isPresented: Binding(
             get: { model.isRecapPresented },

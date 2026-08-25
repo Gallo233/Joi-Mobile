@@ -649,3 +649,34 @@
 - **Not changed or claimed:** no in-app driving, arbitrary walking route,
   cultural route creation, backend planner, live traffic/ETA, system Maps SLA,
   device GPS, field, accessibility, Android or release evidence.
+
+## DEC-048 — Installed route inventory is not route authority
+
+- **Status:** Accepted with content-authenticity and device conditions
+- **Date:** 2026-08-25
+- **Decision:** idle Map exposes a secondary cultural-route library containing
+  the labelled bundled sample and every installed travel-pack identity. Listing
+  reads manifest/content summaries only. Selecting a row must restore and repeat
+  the exact pack's rights/expiry, declared hash, undeclared-content and narrative
+  checks before its route may replace the current walk.
+- **Why listing and selection are different.** A complete inventory must retain
+  an installed pack even when its content has become unreadable; hiding it would
+  make export and storage truth false. But existence is not integrity. The UI
+  therefore shows unreadable entries as unusable, and every apparently usable
+  entry crosses the verifier again only after a deliberate tap.
+- **Route-task boundary.** Import and selection are both refused during a walk.
+  Successful idle selection clears progress, place proposal/confirmation,
+  staged journey attachment and recap presentation before saving the exact
+  `packID + version`. No alternate owner for route or journey state is created.
+- **Sample and retention.** Choosing the bundled sample clears the active pointer
+  but does not delete installed packs. Its copy says it is demonstration content,
+  not a downloaded route or rights-cleared cultural publication.
+- **Trust and privacy.** Rows show version, source-revision count and the pack's
+  self-declared rights. The sheet says these inventory facts are not verification
+  and that Apple search results never become Joi cultural routes automatically.
+  Opening or choosing uses only local sealed content and starts no location or
+  provider request.
+- **Not changed or claimed:** no download service, publisher signature, Apple
+  result → sourced Joi place, route creation, backend `/v1/routes`, arbitrary
+  offline rerouting, basemap cache, deletion, Android UI, device/field,
+  accessibility or release evidence.

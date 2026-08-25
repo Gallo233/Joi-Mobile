@@ -163,6 +163,124 @@ final class TravelPackImportTests: XCTestCase {
         XCTAssertEqual(model.packImportMessage, "步行进行中，先结束再导入路线包。")
     }
 
+    /// The store may hold several verified tours. Listing does not activate
+    /// one, while choosing an exact identity re-verifies and remembers it.
+    func testAnInstalledRouteCanBeSelectedAndReturnsAfterRelaunch() async throws {
+        let fixture = try AppPackFixture()
+        defer { fixture.cleanup() }
+        let defaults = Self.emptyDefaults()
+        defer { defaults.removePersistentDomain(forName: defaultsSuite(defaults)) }
+        let model = AppModel(
+            packInstaller: TravelPackInstaller(root: fixture.store),
+            defaults: defaults
+        )
+        await model.importTravelPack(at: fixture.candidate)
+        let other = try makeAlternativeCandidate(in: fixture)
+        await model.importTravelPack(at: other)
+
+        await model.refreshInstalledTravelPacks()
+        XCTAssertEqual(model.installedTravelPacks.map(\.packID), ["pack.app.other", "pack.app.test"])
+
+        let selected = await model.selectInstalledTravelPack(
+            packID: "pack.app.test",
+            version: "1.0.0"
+        )
+        XCTAssertTrue(selected, model.packImportMessage ?? "selection failed without a message")
+        XCTAssertEqual(model.installedPack?.packID, "pack.app.test")
+        XCTAssertEqual(model.walk.title, "导入的测试路线")
+
+        let relaunched = AppModel(
+            packInstaller: TravelPackInstaller(root: fixture.store),
+            defaults: defaults
+        )
+        await relaunched.restoreActiveTravelPack()
+        XCTAssertEqual(relaunched.installedPack?.packID, "pack.app.test")
+        XCTAssertEqual(relaunched.walk.title, "导入的测试路线")
+    }
+
+    /// An inventory row is not authority. If bytes changed after listing, the
+    /// exact restore fails and the route already on screen stays byte-for-byte.
+    func testATamperedListedRouteCannotReplaceTheCurrentRoute() async throws {
+        let fixture = try AppPackFixture()
+        defer { fixture.cleanup() }
+        let model = AppModel(packInstaller: TravelPackInstaller(root: fixture.store))
+        await model.importTravelPack(at: fixture.candidate)
+        let first = try XCTUnwrap(model.installedPack)
+        let other = try makeAlternativeCandidate(in: fixture)
+        await model.importTravelPack(at: other)
+        let beforeID = try XCTUnwrap(model.installedPack?.packID)
+        let beforeRoute = model.walk.route
+
+        try Data("changed after listing".utf8).write(
+            to: first.rootURL.appendingPathComponent("notes.txt")
+        )
+        await model.refreshInstalledTravelPacks()
+        XCTAssertTrue(model.installedTravelPacks.contains { $0.packID == first.packID })
+
+        let selected = await model.selectInstalledTravelPack(
+            packID: first.packID,
+            version: first.version
+        )
+        XCTAssertFalse(selected)
+        XCTAssertEqual(model.installedPack?.packID, beforeID)
+        XCTAssertEqual(model.walk.route, beforeRoute)
+        XCTAssertTrue(model.packImportMessage?.contains("没有通过校验") == true)
+    }
+
+    /// Returning to the explicitly labelled sample leaves downloads installed,
+    /// but clears the active pointer so a relaunch cannot silently switch back.
+    func testTheBundledSampleCanBeSelectedAndClearsTheActivePointer() async throws {
+        let fixture = try AppPackFixture()
+        defer { fixture.cleanup() }
+        let defaults = Self.emptyDefaults()
+        defer { defaults.removePersistentDomain(forName: defaultsSuite(defaults)) }
+        let model = AppModel(
+            packInstaller: TravelPackInstaller(root: fixture.store),
+            defaults: defaults
+        )
+        await model.importTravelPack(at: fixture.candidate)
+
+        let selected = await model.selectBundledSampleWalk()
+        XCTAssertTrue(selected)
+        XCTAssertNil(model.installedPack)
+        XCTAssertEqual(model.walk.route.routeID, CachedWalk.sample.route.routeID)
+        XCTAssertNil(defaults.data(forKey: AppModel.activeTravelPackKey))
+        await model.refreshInstalledTravelPacks()
+        XCTAssertEqual(model.installedTravelPacks.count, 1, "selection does not delete the installed pack")
+
+        let relaunched = AppModel(
+            packInstaller: TravelPackInstaller(root: fixture.store),
+            defaults: defaults
+        )
+        await relaunched.restoreActiveTravelPack()
+        XCTAssertNil(relaunched.installedPack)
+        XCTAssertEqual(relaunched.walk.route.routeID, CachedWalk.sample.route.routeID)
+        XCTAssertNil(relaunched.packImportMessage)
+    }
+
+    /// Route selection has the same task boundary as import: never swap the
+    /// progress engine or narrative underneath an active journey.
+    func testAnInstalledRouteCannotBeSelectedDuringAWalk() async throws {
+        let fixture = try AppPackFixture()
+        defer { fixture.cleanup() }
+        let model = AppModel(packInstaller: TravelPackInstaller(root: fixture.store))
+        await model.importTravelPack(at: fixture.candidate)
+        let other = try makeAlternativeCandidate(in: fixture)
+        await model.importTravelPack(at: other)
+        let before = try XCTUnwrap(model.installedPack?.packID)
+        model.startWalk()
+
+        let selected = await model.selectInstalledTravelPack(
+            packID: "pack.app.test",
+            version: "1.0.0"
+        )
+
+        XCTAssertFalse(selected)
+        XCTAssertEqual(model.installedPack?.packID, before)
+        XCTAssertEqual(model.packImportMessage, "步行进行中，先结束再切换文化路线。")
+        model.stopWalk()
+    }
+
     /// `FAIL-029` — a space refusal names both numbers, because "not enough
     /// space" alone tells the user nothing they can act on.
     func testAStorageRefusalNamesRequiredAndAvailable() {
@@ -211,6 +329,36 @@ final class TravelPackImportTests: XCTestCase {
 
     private func defaultsSuite(_ defaults: UserDefaults) -> String {
         defaults.string(forKey: "test.suite-name")!
+    }
+
+    private func makeAlternativeCandidate(in fixture: AppPackFixture) throws -> URL {
+        let candidate = fixture.root.appendingPathComponent("candidate-other", isDirectory: true)
+        try FileManager.default.copyItem(at: fixture.candidate, to: candidate)
+
+        let routeURL = candidate.appendingPathComponent("route.json")
+        var route = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: routeURL)) as? [String: Any]
+        )
+        route["routeID"] = "pack.app.other.route"
+        route["title"] = "另一条已安装路线"
+        let routeData = try JSONSerialization.data(withJSONObject: route, options: [.sortedKeys])
+        try routeData.write(to: routeURL)
+
+        let manifestURL = candidate.appendingPathComponent("manifest.json")
+        var manifest = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any]
+        )
+        manifest["packID"] = "pack.app.other"
+        manifest["routeID"] = "pack.app.other.route"
+        manifest["version"] = "2.0.0"
+        var files = try XCTUnwrap(manifest["files"] as? [[String: Any]])
+        let routeIndex = try XCTUnwrap(files.firstIndex { $0["path"] as? String == "route.json" })
+        files[routeIndex]["sha256"] = SHA256.hash(data: routeData)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        manifest["files"] = files
+        try JSONSerialization.data(withJSONObject: manifest, options: [.sortedKeys]).write(to: manifestURL)
+        return candidate
     }
 }
 

@@ -132,6 +132,10 @@ final class AppModel {
     private(set) var walk = CachedWalk.sample
     /// The installed pack, if any (`G2-J4C`).
     private(set) var installedPack: InstalledTravelPack?
+    /// Inventory for the explicit route picker (`G2-J5O`). These are manifest
+    /// summaries only; choosing one still calls `restore` and re-verifies the
+    /// sealed bytes before they may become the walk.
+    private(set) var installedTravelPacks: [InstalledTravelPackSummary] = []
     private(set) var packImportMessage: String?
     @ObservationIgnored private let packInstaller: TravelPackInstaller
     /// The latest reading of where the user is along the walk. A projection:
@@ -608,9 +612,7 @@ final class AppModel {
                 packID: selection.packID,
                 version: selection.version
             )
-            walk = try CachedWalk(pack: restored)
-            installedPack = restored
-            furthestWalkProgress = 0
+            try await useInstalledTravelPack(restored, remember: false)
         } catch {
             // A stale pointer never picks a different installed pack on the
             // user's behalf. The bundled sample remains, and a future launch
@@ -636,16 +638,8 @@ final class AppModel {
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         do {
             let installed = try await packInstaller.install(from: url)
-            walk = try CachedWalk(pack: installed)
-            installedPack = installed
-            furthestWalkProgress = 0
-            let selection = StoredTravelPackSelection(
-                packID: installed.packID,
-                version: installed.version
-            )
-            if let data = try? JSONEncoder().encode(selection) {
-                defaults.set(data, forKey: Self.activeTravelPackKey)
-            }
+            try await useInstalledTravelPack(installed, remember: true)
+            installedTravelPacks = await packInstaller.installed()
             packImportMessage = String(localized: "已导入：\(installed.title)")
         } catch {
             // The installed pack, if there was one, is untouched by a refusal.
@@ -653,14 +647,82 @@ final class AppModel {
         }
     }
 
+    /// Reads the local route inventory without treating its summaries as
+    /// verified content. No location, network request or route change occurs.
+    func refreshInstalledTravelPacks() async {
+        installedTravelPacks = await packInstaller.installed()
+    }
+
+    /// Selects one exact installed identity and re-verifies it before use.
+    /// A stale/tampered row remains an inventory fact, but can never replace the
+    /// current walk. The Boolean lets the sheet dismiss only after a real switch.
+    @discardableResult
+    func selectInstalledTravelPack(packID: String, version: String) async -> Bool {
+        guard !isWalking else {
+            packImportMessage = String(localized: "步行进行中，先结束再切换文化路线。")
+            return false
+        }
+        do {
+            let restored = try await packInstaller.restore(packID: packID, version: version)
+            try await useInstalledTravelPack(restored, remember: true)
+            packImportMessage = String(localized: "已切换：\(restored.title)")
+            return true
+        } catch {
+            packImportMessage = Self.packFailureMessage(error)
+            return false
+        }
+    }
+
+    /// Returns deliberately to the bundled demonstration route. The old pack
+    /// stays installed, but no durable pointer may make it active next launch.
+    @discardableResult
+    func selectBundledSampleWalk() async -> Bool {
+        guard !isWalking else {
+            packImportMessage = String(localized: "步行进行中，先结束再切换文化路线。")
+            return false
+        }
+        walk = .sample
+        installedPack = nil
+        defaults.removeObject(forKey: Self.activeTravelPackKey)
+        await resetRouteScopedState()
+        packImportMessage = String(localized: "已切换为示例路线。")
+        return true
+    }
+
     func acknowledgePackMessage() { packImportMessage = nil }
+
+    private func useInstalledTravelPack(
+        _ pack: InstalledTravelPack,
+        remember: Bool
+    ) async throws {
+        let nextWalk = try CachedWalk(pack: pack)
+        walk = nextWalk
+        installedPack = pack
+        if remember {
+            let selection = StoredTravelPackSelection(packID: pack.packID, version: pack.version)
+            if let data = try? JSONEncoder().encode(selection) {
+                defaults.set(data, forKey: Self.activeTravelPackKey)
+            }
+        }
+        await resetRouteScopedState()
+    }
+
+    private func resetRouteScopedState() async {
+        walkObservation = nil
+        furthestWalkProgress = 0
+        placeProposal = .betweenStops
+        confirmedPlace = nil
+        pendingJourneyAttachment = nil
+        isRecapPresented = false
+        await journeyContext.clear()
+    }
 
     /// Missing content and invalid content get different copy because they need
     /// different recoveries: one is worth fetching again, the other is a pack
     /// not to trust (`FAIL-025` / `FAIL-026`).
     static func packFailureMessage(_ error: Error) -> String {
         guard let error = error as? OfflinePackError else {
-            return String(localized: "这个路线包无法导入；当前路线没有变化。")
+            return String(localized: "这个路线包无法使用；当前路线没有变化。")
         }
         switch error {
         case .missingFile:
