@@ -426,4 +426,226 @@
 - **Why a correction and a confirmation differ in durability, which was a real bug here.** Treating them alike meant the next reading immediately undid every correction — because a user usually corrects *precisely when* the readings are wrong, so the readings keep disagreeing. An automatic confirmation is the product's own guess and a later guess may replace it; a correction is the user overruling the guesses, and repeating the guess is not new information. `FAIL-018`: cancel the wait, never revert the override.
 - **Accuracy widens the search and lowers confidence at once.** A vague fix should surface *more* candidates and assert *none* of them. The first formula divided distance by a radius that grew with accuracy, so a worse fix produced a more confident answer — inverted, and exactly the auto-confirm-the-wrong-place behaviour `FAIL-017` exists to prevent. A monotonicity property test caught it; reading the formula had not.
 - **Identity confidence stays its own value.** PRD §8.1 keeps "is this the place" apart from "who says it" and "does the evidence support it", so nothing here mixes the resolver's confidence with a source's authority or support.
-- **Not implemented, and not claimed:** online place lookup, arbitrary nearby search, and any freshness beyond "this came with the pack". `FAIL-018` stays partial because a correction has nothing to be submitted to — no place service, so no remote case, no acknowledgement, no pending status to show.
+- **Not implemented at this decision, and not claimed:** online place lookup,
+  arbitrary nearby search, and any freshness beyond "this came with the pack".
+  DEC-045 later adds read-only Apple Maps search, but deliberately does not turn
+  it into a Joi correction service. `FAIL-018` therefore stays partial: no
+  remote correction case, acknowledgement or pending status exists.
+
+## DEC-042 — An export carries the user's own data, names what it leaves behind, and proves it landed
+
+- **Status:** Accepted
+- **Date:** 2026-08-20
+- **Decision:** `DataExportRequestV1/ResultV1`, `DataCategory` and
+  `DataExportCoverage` make PRD §6.4's five export categories executable, and
+  `MemoryRepository` gains the `export` its own contract line has listed since
+  G1. One JSON document carries the memory store in full, the open conversation,
+  and an inventory of installed character and travel packages. The document is
+  written to staging, moved into place, re-read and hashed; the result's byte
+  count and digest describe that re-read file. `FAIL-029` applies at this end
+  too: room is checked before anything is written and a refusal carries both
+  numbers.
+- **Why a package's files stay behind.** DEC-010 says a hash proves integrity and
+  not authorship. A character's model, textures and motions are the author's work
+  under the licence the package declares, so writing them out under the heading
+  "your data" would turn every export into the redistribution the rights
+  quarantine exists to prevent — and it would give the user nothing, because the
+  file they imported is still theirs, where they got it. The export names the
+  package, its content identity, its renderer and whether it may activate, and
+  says in the same section that the assets are not included and why.
+- **Why `empty` and `unavailable` are different values.** An empty array under
+  `account` reads as "you have no account data", a claim about the user. The
+  truth is "this build has no accounts", a claim about the app. A person auditing
+  what a company holds about them cannot tell those apart from an empty list, so
+  the type refuses to conflate them and an unavailable category must carry its
+  reason. The same rule makes `conversations` permanently `partial`: nothing
+  keeps a conversation after the app closes, so an empty list there means
+  "nothing was said in this session" and never "you have no history".
+- **Why `RemoteExportAcknowledgement` has one case.** `JM-P0-023` asks for
+  completion evidence for synchronized export as well, and nothing in this
+  product synchronizes anything. A type with `pending` and `acknowledged` cases
+  would describe states no code can produce, and the first reader would
+  reasonably assume something does. Building sync means adding the cases, and
+  every switch that then fails to compile is a place that was quietly assuming
+  local-only.
+- **Why the result is measured from the file rather than from the bytes.** An
+  export is a promise that a copy of someone's data now exists where they can
+  reach it, and only reading it back proves that. A file that does not verify is
+  removed and the attempt is reported as a failure; handing a person a document
+  they believe holds their data, which does not, is worse than refusing.
+- **Why the previous export is deleted last, and why there is only one.** Room is
+  checked while the old export is still on disk, and the old one is removed only
+  after the new one verifies — making room by destroying what the user already
+  had is not an improvement over refusing. Only one is kept because an export is
+  a second, unencrypted copy of everything the app holds; letting them pile up
+  would turn a privacy feature into a set of duplicates nobody remembers making.
+  For the same reason they live in the temporary directory rather than beside the
+  data they copy: an export is not part of the app's durable state.
+- **Not built, and not claimed:** PRD §6.4's granular category deletion and
+  complete-delete action, any remote tombstone, acknowledgement or retention
+  receipt, and `JM-P0-024`'s analytics. Deletion today is per memory record and
+  per installed package, which is what `FAIL-032` records. `FAIL-029` stays
+  partial because character-package import still cannot name required against
+  available.
+
+## DEC-043 — A saved travel pack identity is a preference, and the bytes must prove themselves again
+
+- **Status:** Accepted
+- **Date:** 2026-08-21
+- **Decision:** after a successful import, the App stores the exact travel-pack
+  `packID` and `version`. On launch `TravelPackInstaller.restore` reopens that
+  sealed identity and repeats rights/expiry, declared-file hashes,
+  undeclared-content and route-narrative validation before Map may use it. The
+  saved value contains no filesystem path, route progress, coordinate or journey
+  snapshot. Restore never starts location.
+- **Why the App does not choose the newest installed pack.** More than one
+  identity may exist in the store, and recency is neither consent nor intent.
+  The last successfully selected identity is the only one restored. If it no
+  longer validates, the App uses the bundled sample, clears the stale pointer
+  and says so; it does not silently substitute another pack.
+- **Why verification happens again.** Installation proves the bytes that landed
+  at that moment. A directory can later be deleted, corrupted or changed by a
+  development/filesharing path. A pointer in `UserDefaults` cannot extend an old
+  proof over new bytes, so restore repeats both halves of integrity: every
+  declared file still matches and no undeclared file has appeared.
+- **Store identity is now a path policy.** `packID` and `version` form
+  `packID@version` on disk, so the travel-pack schema and Swift runtime both
+  constrain them to bounded ASCII identifiers. Previously both were merely
+  non-empty, allowing separators and traversal to participate in the
+  destination. The installer also now treats containment as a component
+  boundary: `/candidate-escape` is not inside `/candidate`, even though it has
+  the same lexical prefix.
+- **Not changed or claimed:** self-declared hashes still prove integrity rather
+  than publisher authenticity; download and signature verification remain
+  absent; no route progress or travel history is restored; simulator tests do
+  not prove airplane-mode, GPS, storage pressure or outdoor navigation.
+
+## DEC-044 — Use MapKit for today's real map, and keep offline truth in Joi's overlays
+
+- **Status:** Accepted with field/data conditions
+- **Date:** 2026-08-22
+- **Decision:** the current iOS Map surface uses the system MapKit standard map
+  for streets, provider-controlled labels, attribution, interaction and
+  selectable Apple map features. Joi overlays the accepted cached route, exact
+  completed portion, route-pack stops and the foreground walking position. MapKit
+  is presentation only: it neither computes Joi progress nor writes journey
+  state, confirms a cached stop, creates a source, attaches location to Chat or
+  stores memory.
+- **Why MapKit now.** The prior route-only canvas proved the offline progress
+  boundary but left the primary Map surface without the basic spatial context a
+  map exists to provide. MapKit is already part of the target platform, adds no
+  package or vendor runtime, preserves native interaction/accessibility, and
+  supplies a usable online map while the separate MapLibre admission gate stays
+  closed.
+- **Online/offline boundary.** The route geometry, ordered stops, narration,
+  progress projection and return-to-route guidance are cached and continue to
+  define the offline tour. Apple's basemap is network-dependent and is labelled
+  that way; a tile already present in a system cache is not a downloaded travel
+  pack and never closes the airplane-mode map gate. MapLibre remains the
+  candidate for rights-cleared downloadable corridor resources, subject to an
+  exact dependency, style/font/tile source, attribution and redistribution
+  decision.
+- **Location boundary.** Entering Map starts no permission or collection.
+  Position appears and camera-follow becomes available only after the deliberate
+  start-walk action. Ending or losing that task removes the position overlay and
+  stops camera follow; the last in-memory fix is not displayed on an idle map.
+- **Conditions still open:** real-device GPS and outdoor drift, flight-mode tile
+  behavior, map-data/legal release review, full VoiceOver/Dynamic Type/Reduce
+  Motion coverage, and compact-device layout remain G4/G5/language-accessibility
+  gates. Simulator MapKit tiles and simulated coordinates prove UI integration,
+  not any of those conditions.
+
+## DEC-045 — Apple Maps search results are transient presentation, not Joi place truth
+
+- **Status:** Accepted with provider/privacy conditions
+- **Date:** 2026-08-24
+- **Decision:** Map may submit an explicitly entered name or address to
+  `MKLocalSearch`, bounded to the authored route region. The response is reduced
+  to at most 12 transient names, addresses and coordinates. Selecting one moves
+  the camera and draws a removable marker; it does not confirm a route stop,
+  create a source, alter the cached route, write `JourneyContextStore`, attach
+  context to Chat or become memory.
+- **Why search is separate from arrive-and-tell.** Apple can answer where a map
+  feature is, but that is not Joi's evidence that a cultural claim is supported
+  or that the walker has arrived there. Treating an Apple result as
+  `ConfirmedPlace` would silently cross identity, source and location-consent
+  boundaries. A later official place service may add those contracts explicitly;
+  today's search cannot stand in for it.
+- **Privacy and cancellation.** Search begins only on submit. The UI says that
+  the text and route range go to Apple; no live GPS sample is put in the search
+  request. Queries/results live only in the sheet, are never logged or persisted,
+  and are cleared when it closes. Every new submit cancels and generation-gates
+  the previous request, including a provider response that arrives late.
+- **Offline and provider truth.** A known-unreachable interface refuses before
+  MapKit is invoked and says the cached route remains usable. Unknown reachability
+  may attempt, because interface presence can never promise provider success;
+  empty and failed are separate recoverable states. Search itself is not cached
+  and makes no offline claim.
+- **Not changed or claimed:** no Chat-to-Map intent handoff, cultural route
+  selection, directions, arbitrary rerouting, source eligibility, remote place
+  correction/acknowledgement, search history, device GPS or field evidence.
+
+## DEC-046 — Chat hands Map inspected text, not inferred place truth
+
+- **Status:** Accepted with backend/product conditions
+- **Date:** 2026-08-25
+- **Decision:** an accepted user line in the active transcript may open an
+  editable Chat → Map proposal. Acceptance carries only the trimmed search text
+  once, switches the existing App session to Map, and opens the existing search
+  sheet with that text prefilled. It does not submit search, attach the whole
+  transcript, include location, or write any owner/persistence contract.
+- **Why the user line is the boundary.** The current companion-event contract
+  carries no typed place intent, resolved candidate or ambiguity set. Guessing
+  from keywords would make product routing depend on an unversioned heuristic,
+  while treating companion prose as intent would promote generated wording over
+  the person's choice. The action is therefore available on accepted user lines
+  and the person chooses which one means “look this up.” A future backend offer
+  must be a separate typed contract rather than silently replacing this rule.
+- **Two decisions, two transmissions.** The preview decision authorises one
+  string to cross from Chat to Map inside the App. The later Search action is the
+  distinct consent moment that sends that string and the authored route region
+  to Apple Maps under DEC-045. Merely changing surfaces makes no provider call.
+- **Continuity and cancellation.** Proposal and cancellation leave the active
+  transcript, character, thread, session and journey byte-for-byte unchanged.
+  Acceptance also preserves them; only the primary-surface projection changes.
+  The pending query is consumed once so a later Map appearance cannot reopen
+  stale conversation text.
+- **Not changed or claimed:** no place-intent NLP, contextual Joi offer, Apple
+  result → Joi place resolution, cultural route creation, directions, location
+  transfer, memory/source/confidence claim, persistence, analytics, Android UI,
+  device or accessibility evidence.
+
+## DEC-047 — Driving leaves Joi only after an inspected destination confirmation
+
+- **Status:** Accepted with system-provider and device conditions
+- **Date:** 2026-08-25
+- **Decision:** an idle Apple Maps search result may be proposed as an external
+  driving destination. The person sees that it is not part of the current
+  cultural route, then confirms a dialog naming the destination and the exact
+  fields that cross the application boundary. Only its display name and
+  coordinate are handed to Apple Maps with driving mode. Joi neither plans nor
+  stores the resulting route.
+- **Why the primary action changes.** Leaving “开始步行” beneath a selected search
+  marker implied a route from the user's location to that marker, while the code
+  actually started the unrelated cached tour. When a destination is selected,
+  the driving handoff becomes the primary action and “返回文化路线” is explicit.
+  This is not cosmetic: it prevents one route owner from appearing to operate on
+  another provider's transient result.
+- **Why the system owns driving.** PRD §7 assigns driving requests to system
+  maps, while `RoutePlanningProvider` remains the only in-app new-route planner
+  and currently has no production backend adapter. Using `MKDirections` inside
+  the view would silently create a second planner and bypass the `/v1/routes`
+  boundary. `MKMapItem.openInMaps` instead carries the confirmed destination and
+  makes Apple Maps own route computation and any later location permission.
+- **Cancellation and task safety.** Proposal/cancel invokes no opener. Confirm is
+  consumed before launch and cannot run twice; invalid coordinates never cross
+  the boundary; provider refusal preserves the destination and requires another
+  explicit confirmation. A running cultural walk must first end its visible
+  location/follow task before the driving action appears.
+- **Data boundary:** no transcript, companion prose, memory, cached geometry,
+  journey attachment, `ConfirmedPlace`, source, current Joi location, defaults,
+  logs or analytics are sent or written. The transient destination remains an
+  Apple result under DEC-045, not Joi place truth.
+- **Not changed or claimed:** no in-app driving, arbitrary walking route,
+  cultural route creation, backend planner, live traffic/ETA, system Maps SLA,
+  device GPS, field, accessibility, Android or release evidence.

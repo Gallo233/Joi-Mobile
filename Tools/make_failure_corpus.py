@@ -101,9 +101,9 @@ STATUS: dict[str, tuple[str, str, list[str], str]] = {
         "OfflinePack, App",
         ["PlaceResolverTests", "ArriveAndTellTests"],
         "A correction applies locally and immediately and survives later readings that disagree "
-        "with it, which is the half that protects the user. There is nothing to submit it to: no "
-        "place service exists, so there is no remote case, no acknowledgement and therefore no "
-        "pending status to show.",
+        "with it, which is the half that protects the user. Apple Maps search is read-only "
+        "presentation and is intentionally not a Joi correction service, so there is still no "
+        "remote correction case, acknowledgement or pending status to show.",
     ),
     "FAIL-019": ("absent", "MapFeature", [], "No camera capture path exists."),
     "FAIL-020": ("absent", "MapFeature", [], "No photo selection path exists."),
@@ -143,18 +143,17 @@ STATUS: dict[str, tuple[str, str, list[str], str]] = {
         ["RouteProgressEngineTests", "CachedWalkTests", "MapExperienceStateTests"],
         "",
     ),
-    "FAIL-028": ("absent", "MapFeature", [], "No navigation start and no system-maps handoff exist."),
+    "FAIL-028": ("implemented", "App, MapFeature", ["SystemMapHandoffTests"], ""),
     "FAIL-029": (
         "partial",
         "OfflinePack, App",
-        ["TravelPackInstallerTests", "TravelPackImportTests"],
-        "Travel-pack import is complete: the exact byte requirement is known before anything is "
-        "copied, the refusal carries required and available, and a failed copy removes its "
-        "staging directory rather than leaving a partial one. Character-package import is not "
-        "covered — its expanded size is only known while streaming, and telling the user what "
-        "to free up needs a failure reason carrying both numbers, which widens a taxonomy the "
-        "Kotlin core mirrors and the conformance vectors cover. Export does not exist at all "
-        "(`JM-P0-023`).",
+        ["TravelPackInstallerTests", "TravelPackImportTests", "DataExportTests"],
+        "Travel-pack import and local data export are both covered: each knows its exact byte "
+        "requirement before anything is written, refuses with required and available, and "
+        "leaves what was already installed or already exported untouched. Character-package "
+        "import is not covered — its expanded size is only known while streaming, and telling "
+        "the user what to free up needs a failure reason carrying both numbers, which widens a "
+        "taxonomy the Kotlin core mirrors and the conformance vectors cover.",
     ),
     "FAIL-030": (
         "absent",

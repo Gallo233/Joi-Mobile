@@ -59,6 +59,15 @@ actor MemoryStore: MemoryRepository {
         try write(current)
     }
 
+    /// Everything on disk, newest first, for every character.
+    ///
+    /// The store is the only thing that knows what it holds, so an export asks
+    /// it rather than asking for each character in turn — including characters
+    /// that were removed, whose memory deliberately outlives them (DEC-002).
+    func export() async throws -> [MemoryRecordV1] {
+        try records().sorted { $0.createdAt > $1.createdAt }
+    }
+
     func delete(recordID: String) async throws {
         var current = try records()
         let before = current.count

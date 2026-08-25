@@ -256,4 +256,17 @@ public protocol MemoryRepository: Sendable {
     func list(characterID: String) async throws -> [MemoryRecordV1]
     func save(_ record: MemoryRecordV1, authorizationDigest: String?) async throws
     func delete(recordID: String) async throws
+    /// Every record this device holds, for every character.
+    ///
+    /// Separate from `list(characterID:)` and not expressible through it: the
+    /// caller would have to already know every character that has ever been
+    /// installed, and a record whose character was removed would be
+    /// unreachable — invisible to an export while still on disk, which is the
+    /// one thing an export must not be. `JM-P0-023` asks for a *complete* local
+    /// export, so completeness is the repository's answer to give, not the
+    /// caller's to assemble.
+    ///
+    /// Not a filter and not a projection: exporting a person's own data is not
+    /// the place to decide which of it they may see.
+    func export() async throws -> [MemoryRecordV1]
 }

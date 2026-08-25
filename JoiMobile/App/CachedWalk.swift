@@ -105,43 +105,4 @@ struct CachedWalk {
             stops: pack.stops
         )
     }
-
-    /// Route coordinates projected into a unit square for drawing, preserving
-    /// aspect at this latitude so the corridor is not visibly stretched.
-    ///
-    /// Deliberately not a map: there are no tiles, no basemap and no claim to
-    /// one. It is the shape of the route and where you are on it, which is what
-    /// the cached-corridor promise actually covers.
-    func normalizedPath(aspect: Double) -> [(x: Double, y: Double)] {
-        Self.normalize(route.coordinates, aspect: aspect)
-    }
-
-    func normalizedPoint(_ coordinate: GeoCoordinate, aspect: Double) -> (x: Double, y: Double)? {
-        Self.normalize(route.coordinates + [coordinate], aspect: aspect).last
-    }
-
-    private static func normalize(
-        _ coordinates: [GeoCoordinate],
-        aspect: Double
-    ) -> [(x: Double, y: Double)] {
-        guard let first = coordinates.first else { return [] }
-        var minLat = first.latitude, maxLat = first.latitude
-        var minLon = first.longitude, maxLon = first.longitude
-        for point in coordinates {
-            minLat = min(minLat, point.latitude); maxLat = max(maxLat, point.latitude)
-            minLon = min(minLon, point.longitude); maxLon = max(maxLon, point.longitude)
-        }
-        // Longitude degrees are shorter than latitude degrees away from the
-        // equator, so they are scaled by cos(latitude) before fitting.
-        let latitudeScale = cos((minLat + maxLat) / 2 * .pi / 180)
-        let width = max((maxLon - minLon) * latitudeScale, 1e-9)
-        let height = max(maxLat - minLat, 1e-9)
-        let span = max(width / max(aspect, 1e-9), height)
-        return coordinates.map { point in
-            let x = ((point.longitude - minLon) * latitudeScale / span / max(aspect, 1e-9))
-            let y = ((point.latitude - minLat) / span)
-            // 0.1…0.9 keeps the drawn corridor inside its card with a margin.
-            return (x: 0.1 + x * 0.8, y: 0.9 - y * 0.8)
-        }
-    }
 }

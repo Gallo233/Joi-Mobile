@@ -52,6 +52,11 @@ struct CharacterImportPreview: Equatable, Sendable {
 @MainActor
 @Observable
 final class AppModel {
+    private struct StoredTravelPackSelection: Codable, Equatable {
+        let packID: String
+        let version: String
+    }
+
     private struct ActiveRuntimeResource: Sendable {
         let handle: ValidatedCharacterPackageHandle
         let generation: RendererGeneration
@@ -98,6 +103,15 @@ final class AppModel {
     private(set) var chatTranscript: [TranscriptEntry] = []
     private(set) var chatTurnState: ChatTurnState = .idle
 
+    /// The inspected Chat → Map handoff (`G2-J5M`). The selected line remains
+    /// immutable while the editable query says exactly what Map would receive.
+    /// Neither is persistent or part of a shared owner.
+    private(set) var mapHandoffDraft: MapHandoffDraft?
+    var mapHandoffQuery = ""
+    /// Consumed exactly once by the Map surface. Holding it does not submit a
+    /// provider request; MapSearch still owns that later, explicit action.
+    private(set) var pendingMapSearchQuery: String?
+
     let companionSession: CompanionSessionStore
     let journeyContext = JourneyContextStore()
     let speechCoordinator = SpeechCoordinator()
@@ -119,7 +133,7 @@ final class AppModel {
     /// The installed pack, if any (`G2-J4C`).
     private(set) var installedPack: InstalledTravelPack?
     private(set) var packImportMessage: String?
-    @ObservationIgnored private lazy var packInstaller = TravelPackInstaller(root: Self.defaultPackRoot())
+    @ObservationIgnored private let packInstaller: TravelPackInstaller
     /// The latest reading of where the user is along the walk. A projection:
     /// `JourneyContextStore` is still the only thing that records progress.
     private(set) var walkObservation: CachedRouteProgressObservation?
@@ -169,6 +183,13 @@ final class AppModel {
     var isMemoryListPresented = false
     @ObservationIgnored private let memoryStore: any MemoryRepository
 
+    /// Local data export (`G2-J5I`). The sheet is secondary, reached from
+    /// Settings, and the state is the whole flow: nothing has been written until
+    /// it is `ready`, and a `failed` export has written nothing at all.
+    var isDataExportPresented = false
+    private(set) var dataExportState: DataExportState = .idle
+    @ObservationIgnored private let dataExportWriter: DataExportWriter
+
     /// Sources carried by each accepted event (`G2-J3C`).
     ///
     /// Held here rather than on `TranscriptEntry`, which is a frozen contract
@@ -205,6 +226,8 @@ final class AppModel {
         renderer: any CharacterRenderer = StaticCharacterRenderer(),
         chatGateway: (any ChatGateway)? = nil,
         memoryStore: (any MemoryRepository)? = nil,
+        packInstaller: TravelPackInstaller? = nil,
+        dataExportWriter: DataExportWriter? = nil,
         networkMonitor: NetworkMonitor? = nil,
         defaults: UserDefaults = .standard,
         stallTimeout: Duration = ChatSessionController.defaultStallTimeout,
@@ -217,6 +240,8 @@ final class AppModel {
         isWelcomePresented = !defaults.bool(forKey: Self.welcomeSeenKey)
         self.installer = installer ?? CharacterPackageInstaller(root: Self.defaultCharacterRoot())
         self.memoryStore = memoryStore ?? MemoryStore(fileURL: MemoryStore.defaultFileURL())
+        self.packInstaller = packInstaller ?? TravelPackInstaller(root: Self.defaultPackRoot())
+        self.dataExportWriter = dataExportWriter ?? DataExportWriter(directory: Self.defaultExportDirectory())
         self.renderer = renderer
         // The default endpoint is the local contract mock in `Backend/`. A public
         // build must inject the official HTTPS proxy; `ChatBackendEndpoint`
@@ -260,6 +285,54 @@ final class AppModel {
 
     func select(_ surface: PrimarySurface) { selectedSurface = surface }
 
+    // MARK: - Chat → Map handoff (`G2-J5M`)
+
+    /// Only an accepted user line in the active transcript can be inspected.
+    /// Companion prose is never promoted to place intent, and the App performs
+    /// no heuristic place extraction.
+    func canOpenInMap(_ entry: TranscriptEntry) -> Bool {
+        guard entry.author == .user,
+              !entry.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return false }
+        return chatTranscript.contains(entry)
+    }
+
+    /// Opens an editable proposal and changes no surface or owner state.
+    func proposeMapHandoff(from entry: TranscriptEntry) {
+        guard canOpenInMap(entry) else { return }
+        let query = entry.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        mapHandoffDraft = MapHandoffDraft(id: entry.eventID, originalText: entry.text)
+        mapHandoffQuery = query
+    }
+
+    /// Cancelling returns to the still-open transcript and transfers nothing.
+    func rejectMapHandoff() {
+        mapHandoffDraft = nil
+        mapHandoffQuery = ""
+    }
+
+    /// Approves one transient query for Map. Search itself remains a separate
+    /// disclosed action inside `MapSearchSheet`.
+    @discardableResult
+    func acceptMapHandoff() -> Bool {
+        guard mapHandoffDraft != nil else { return false }
+        let query = mapHandoffQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return false }
+        pendingMapSearchQuery = query
+        mapHandoffDraft = nil
+        mapHandoffQuery = ""
+        isTranscriptPresented = false
+        selectedSurface = .map
+        return true
+    }
+
+    /// Map calls this on entry. A reconstruction or second appearance cannot
+    /// reopen stale conversation text.
+    func consumePendingMapSearchQuery() -> String? {
+        defer { pendingMapSearchQuery = nil }
+        return pendingMapSearchQuery
+    }
+
     // MARK: - Settings (`G2-J5E`)
 
     func presentSettings() { isSettingsPresented = true }
@@ -284,6 +357,8 @@ final class AppModel {
             presentCharacterLibrary()
         case .memoryList:
             Task { await presentMemoryList() }
+        case .dataExport:
+            presentDataExport()
         }
     }
 
@@ -511,6 +586,40 @@ final class AppModel {
 
     // MARK: - Travel packs (`G2-J4C`)
 
+    static let activeTravelPackKey = "joi.travel-pack.active.v1"
+
+    /// Restores the exact verified pack last used on Map (`G2-J5J`).
+    ///
+    /// The saved value is only an identity pointer. The installer reopens the
+    /// sealed tree and repeats every integrity/content check before the route is
+    /// shown. This never starts a walk, asks for location or restores progress.
+    func restoreActiveTravelPack() async {
+        guard installedPack == nil, !isWalking,
+              let data = defaults.data(forKey: Self.activeTravelPackKey)
+        else { return }
+        let decoder = JSONDecoder()
+        guard let selection = try? decoder.decode(StoredTravelPackSelection.self, from: data) else {
+            defaults.removeObject(forKey: Self.activeTravelPackKey)
+            packImportMessage = String(localized: "上次使用的路线包已不可用，已切换为示例路线。")
+            return
+        }
+        do {
+            let restored = try await packInstaller.restore(
+                packID: selection.packID,
+                version: selection.version
+            )
+            walk = try CachedWalk(pack: restored)
+            installedPack = restored
+            furthestWalkProgress = 0
+        } catch {
+            // A stale pointer never picks a different installed pack on the
+            // user's behalf. The bundled sample remains, and a future launch
+            // will not repeat the same failed restoration.
+            defaults.removeObject(forKey: Self.activeTravelPackKey)
+            packImportMessage = String(localized: "上次使用的路线包已不可用，已切换为示例路线。")
+        }
+    }
+
     /// Verifies a pack the user chose and, if it holds, makes its tour the walk.
     ///
     /// Refused while a walk is running: swapping the route under a walk in
@@ -530,6 +639,13 @@ final class AppModel {
             walk = try CachedWalk(pack: installed)
             installedPack = installed
             furthestWalkProgress = 0
+            let selection = StoredTravelPackSelection(
+                packID: installed.packID,
+                version: installed.version
+            )
+            if let data = try? JSONEncoder().encode(selection) {
+                defaults.set(data, forKey: Self.activeTravelPackKey)
+            }
             packImportMessage = String(localized: "已导入：\(installed.title)")
         } catch {
             // The installed pack, if there was one, is untouched by a refusal.
@@ -692,6 +808,90 @@ final class AppModel {
     }
 
     func dismissMemoryList() { isMemoryListPresented = false }
+
+    // MARK: - Local data export (`G2-J5I`)
+
+    func presentDataExport() {
+        // Deliberately not re-run here. Opening the sheet again should show the
+        // export the user already made rather than silently replacing it with a
+        // second copy of the same data.
+        isDataExportPresented = true
+    }
+
+    func dismissDataExport() { isDataExportPresented = false }
+
+    /// Gathers everything this device holds and writes it to one file.
+    ///
+    /// Reads through the owners rather than the projections: memory comes from
+    /// the store — every character's, including characters that were removed —
+    /// and the installed characters from the installer, so an export cannot be
+    /// narrower than the truth because a view had not refreshed. The
+    /// conversation is the exception and is read from the App projection,
+    /// because the App projection is where the open conversation lives; nothing
+    /// keeps it after the app closes, and the document says so.
+    func produceDataExport(now: Date = Date()) async {
+        guard dataExportState != .working else { return }
+        dataExportState = .working
+        let request = DataExportRequestV1(requestID: UUID().uuidString.lowercased(), requestedAt: now)
+        let facts = settingsBuildFacts
+        do {
+            let records = try await memoryStore.export()
+            let characters = await installer.list()
+            // The store, not `installedPack`: the App holds only the active
+            // pack, while an export must inventory every pack on the device.
+            let packs = await packInstaller.installed()
+            let document = DataExportBuilder.document(
+                request: request,
+                app: DataExportDocumentV1.AppFacts(version: facts.version, build: facts.build),
+                memory: records,
+                conversation: chatTranscript,
+                characters: characters,
+                travelPacks: packs
+            )
+            let export = try dataExportWriter.write(document, request: request)
+            dataExportState = .ready(export)
+        } catch {
+            // Nothing was written, or what was written has already been removed.
+            // The device's data is untouched either way, and the message says so
+            // rather than leaving the user to wonder what half-happened.
+            dataExportState = .failed(message: Self.exportFailureMessage(error))
+        }
+    }
+
+    /// Why an export did not happen, in the words the user needs to act.
+    static func exportFailureMessage(_ error: Error) -> String {
+        guard let error = error as? DataExportError else {
+            return String(localized: "无法读取本机数据，没有生成导出文件；设备上的数据没有变化。")
+        }
+        switch error {
+        case let .storageInsufficient(required, available):
+            // Kilobytes, not megabytes: an export is a text file, and rounding a
+            // 300 KB requirement up to "1 MB" against "1 MB available" would
+            // print two identical numbers and explain nothing (`FAIL-029`).
+            return String(
+                localized: "空间不足：需要 \(Self.kilobytes(required)) KB，可用 \(Self.kilobytes(available)) KB；没有生成导出文件。"
+            )
+        case .verificationFailed:
+            return String(localized: "导出文件写出后读回校验不一致，已删除；没有可用的导出文件，请再试一次。")
+        case .writeFailed:
+            return String(localized: "无法写出导出文件；设备上的数据没有变化。")
+        }
+    }
+
+    /// Whole kilobytes, rounded up, so a refusal never reads as needing 0 KB.
+    static func kilobytes(_ bytes: Int) -> Int {
+        max(0, Int((Double(bytes) / 1_024).rounded(.up)))
+    }
+
+    /// Exports live in the app's temporary directory, not beside the data they
+    /// copy. An export is a second, unencrypted copy of everything a person
+    /// holds here; keeping it out of Application Support means it is not part of
+    /// the app's durable state, and `DataExportWriter` keeps exactly one.
+    private static func defaultExportDirectory() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("JoiMobile", isDirectory: true)
+            .appendingPathComponent("Exports", isDirectory: true)
+    }
 
     // MARK: - Trusted sources (`G2-J3C`)
 

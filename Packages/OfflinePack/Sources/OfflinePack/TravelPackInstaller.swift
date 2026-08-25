@@ -70,6 +70,39 @@ public struct InstalledTravelPack: Equatable, Sendable {
     public let rootURL: URL
 }
 
+/// One installed pack, as an inventory entry rather than as a walkable tour.
+///
+/// Deliberately less than `InstalledTravelPack`: listing what is in the store
+/// must not re-verify every file of every pack, and an inventory needs neither
+/// the route geometry nor the stops. What it does need is identity, version and
+/// rights, because those are the facts a person asks about something they
+/// downloaded — and `JM-P0-023`'s export has to answer them without pretending
+/// the pack has been re-checked.
+public struct InstalledTravelPackSummary: Equatable, Sendable {
+    public let packID: String
+    public let version: String
+    public let rights: String
+    public let sourceRevisionIDs: [String]
+    /// The tour's own title, when the content file still reads. A pack whose
+    /// content no longer decodes is still installed, and leaving it out of the
+    /// listing would be the more misleading answer.
+    public let title: String?
+
+    public init(
+        packID: String,
+        version: String,
+        rights: String,
+        sourceRevisionIDs: [String],
+        title: String?
+    ) {
+        self.packID = packID
+        self.version = version
+        self.rights = rights
+        self.sourceRevisionIDs = sourceRevisionIDs
+        self.title = title
+    }
+}
+
 /// Installs a travel pack from a directory the user chose.
 ///
 /// `JM-P0-014`, and the two failure states behind it: `FAIL-025`
@@ -83,6 +116,27 @@ public struct InstalledTravelPack: Equatable, Sendable {
 /// pack arrives as a directory; packaging it is a later decision that should
 /// reuse that profile rather than re-derive it.
 public actor TravelPackInstaller {
+    private struct ValidatedPack {
+        let manifest: TravelPackManifestV1
+        let content: TravelPackContentV1
+        let route: AcceptedNavigationRoute
+        let stops: [RouteStop]
+        let declaredBytes: Int
+
+        func installed(at rootURL: URL) -> InstalledTravelPack {
+            InstalledTravelPack(
+                packID: manifest.packID,
+                version: manifest.version,
+                rights: manifest.rights.joined(separator: "; "),
+                sourceRevisionIDs: manifest.sourceRevisionIDs,
+                title: content.title,
+                route: route,
+                stops: stops,
+                rootURL: rootURL
+            )
+        }
+    }
+
     /// Ceilings, matching the character package contract's shape rather than
     /// inventing a second set of numbers.
     static let maximumFileCount = 2_000
@@ -122,9 +176,78 @@ public actor TravelPackInstaller {
     /// previously installed pack exactly where it was — which is what `FAIL-026`
     /// means by keeping the last valid version.
     public func install(from candidate: URL, now: Date = Date()) throws -> InstalledTravelPack {
+        let validated = try validate(candidate, now: now)
+        // Checked before anything is copied, so a full device costs the user a
+        // message rather than a half-written staging directory (`FAIL-029`).
+        try requireRoom(for: validated.declaredBytes)
+
+        let sealed = try seal(candidate, manifest: validated.manifest)
+        return validated.installed(at: sealed)
+    }
+
+    /// Reopens one exact installed identity and proves it is still walkable.
+    ///
+    /// The active-pack pointer is only a preference. It is never authority to
+    /// trust the directory it names: every declared hash, every undeclared file,
+    /// the rights/expiry policy and the route narrative are checked again before
+    /// the App may put the route back on screen.
+    public func restore(
+        packID: String,
+        version: String,
+        now: Date = Date()
+    ) throws -> InstalledTravelPack {
+        guard Self.isSafeStoreIdentifier(packID, maximumLength: 160),
+              Self.isSafeStoreIdentifier(version, maximumLength: 64)
+        else {
+            throw OfflinePackError.invalidManifest
+        }
+        let directory = destination(packID: packID, version: version)
+        let validated = try validate(directory, now: now)
+        guard validated.manifest.packID == packID,
+              validated.manifest.version == version
+        else {
+            throw OfflinePackError.invalidManifest
+        }
+        return validated.installed(at: directory)
+    }
+
+    /// Every pack sealed in this store, whatever session installed it.
+    ///
+    /// The App holds only the active pack, while the store may hold more than
+    /// one identity. The store is the owner of that inventory, and an export
+    /// that has to be complete asks the owner.
+    ///
+    /// Manifests only. A caller that needs a walkable route calls `restore`,
+    /// which repeats verification before returning one.
+    public func installed() -> [InstalledTravelPackSummary] {
+        let packs = root.appendingPathComponent("packs", isDirectory: true)
+        let directories = (try? FileManager.default.contentsOfDirectory(
+            at: packs,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        )) ?? []
+        return directories.compactMap { directory -> InstalledTravelPackSummary? in
+            guard let manifest = try? readManifest(at: directory) else { return nil }
+            return InstalledTravelPackSummary(
+                packID: manifest.packID,
+                version: manifest.version,
+                rights: manifest.rights.joined(separator: "; "),
+                sourceRevisionIDs: manifest.sourceRevisionIDs,
+                title: (try? readContent(manifest, in: directory))?.title
+            )
+        }
+        .sorted {
+            $0.packID == $1.packID ? $0.version < $1.version : $0.packID < $1.packID
+        }
+    }
+
+    // MARK: - Reading
+
+    private func validate(_ candidate: URL, now: Date) throws -> ValidatedPack {
         let manifest = try readManifest(at: candidate)
         try verifier.verify(manifest, now: now)
-        guard !manifest.packID.isEmpty, !manifest.version.isEmpty else {
+        guard Self.isSafeStoreIdentifier(manifest.packID, maximumLength: 160),
+              Self.isSafeStoreIdentifier(manifest.version, maximumLength: 64)
+        else {
             throw OfflinePackError.invalidManifest
         }
         guard manifest.files.count <= Self.maximumFileCount else {
@@ -133,10 +256,6 @@ public actor TravelPackInstaller {
 
         let declaredBytes = try verifyDeclaredFiles(manifest, in: candidate)
         try refuseUndeclaredFiles(manifest, in: candidate)
-        // Checked before anything is copied, so a full device costs the user a
-        // message rather than a half-written staging directory (`FAIL-029`).
-        try requireRoom(for: declaredBytes)
-
         let content = try readContent(manifest, in: candidate)
         let route = AcceptedNavigationRoute(
             routeID: content.routeID,
@@ -144,26 +263,19 @@ public actor TravelPackInstaller {
             // A pack is by definition cached content; that is what it is for.
             cached: true
         )
-        // Building the narrative is a check, not a convenience: it refuses a
-        // route too short to follow and a stop that is not on it.
         let stops = content.stops.map(Self.routeStop)
         let engine = try RouteProgressEngine(route: route, configuration: RouteProgressConfiguration())
+        // Building the narrative is a check, not a convenience: it refuses a
+        // route too short to follow and a stop that is not on it.
         _ = try RouteNarrative(engine: engine, stops: stops)
-
-        let sealed = try seal(candidate, manifest: manifest)
-        return InstalledTravelPack(
-            packID: manifest.packID,
-            version: manifest.version,
-            rights: manifest.rights.joined(separator: "; "),
-            sourceRevisionIDs: manifest.sourceRevisionIDs,
-            title: content.title,
+        return ValidatedPack(
+            manifest: manifest,
+            content: content,
             route: route,
             stops: stops,
-            rootURL: sealed
+            declaredBytes: declaredBytes
         )
     }
-
-    // MARK: - Reading
 
     private func readManifest(at candidate: URL) throws -> TravelPackManifestV1 {
         let url = candidate.appendingPathComponent("manifest.json")
@@ -262,9 +374,7 @@ public actor TravelPackInstaller {
     /// nothing about the bytes that ended up in the store, which is the same
     /// reason the character installer re-opens after moving.
     private func seal(_ candidate: URL, manifest: TravelPackManifestV1) throws -> URL {
-        let destination = root
-            .appendingPathComponent("packs", isDirectory: true)
-            .appendingPathComponent("\(manifest.packID)@\(manifest.version)", isDirectory: true)
+        let destination = destination(packID: manifest.packID, version: manifest.version)
         try FileManager.default.createDirectory(
             at: destination.deletingLastPathComponent(),
             withIntermediateDirectories: true
@@ -320,6 +430,32 @@ public actor TravelPackInstaller {
         )
     }
 
+    private func destination(packID: String, version: String) -> URL {
+        root
+            .appendingPathComponent("packs", isDirectory: true)
+            .appendingPathComponent("\(packID)@\(version)", isDirectory: true)
+    }
+
+    /// The same ASCII component profile frozen in the JSON schema. Both values
+    /// participate in a directory name, so a merely non-empty string is not an
+    /// identifier policy.
+    private static func isSafeStoreIdentifier(_ value: String, maximumLength: Int) -> Bool {
+        guard !value.isEmpty, value.count <= maximumLength,
+              let first = value.unicodeScalars.first,
+              Self.isASCIIAlphaNumeric(first)
+        else { return false }
+        return value.unicodeScalars.allSatisfy {
+            Self.isASCIIAlphaNumeric($0) || $0 == "." || $0 == "_" || $0 == "-"
+        }
+    }
+
+    private static func isASCIIAlphaNumeric(_ scalar: UnicodeScalar) -> Bool {
+        switch scalar.value {
+        case 48...57, 65...90, 97...122: true
+        default: false
+        }
+    }
+
     /// Resolves a declared relative path, refusing anything that could reach
     /// outside the pack.
     private static func resolve(_ path: String, in root: URL) throws -> URL {
@@ -336,7 +472,8 @@ public actor TravelPackInstaller {
         // A symlink inside the pack could still point anywhere, so the resolved
         // path has to land back inside the root.
         let resolved = url.resolvingSymlinksInPath().standardizedFileURL
-        guard resolved.path.hasPrefix(root.resolvingSymlinksInPath().standardizedFileURL.path) else {
+        let resolvedRoot = root.resolvingSymlinksInPath().standardizedFileURL.path
+        guard resolved.path == resolvedRoot || resolved.path.hasPrefix(resolvedRoot + "/") else {
             throw OfflinePackError.unsupportedEntry(path)
         }
         return url
@@ -358,7 +495,7 @@ public actor TravelPackInstaller {
             let values = try item.resourceValues(forKeys: [.isRegularFileKey])
             guard values.isRegularFile == true else { continue }
             let path = item.standardizedFileURL.path
-            guard path.hasPrefix(base) else { continue }
+            guard path.hasPrefix(base + "/") else { continue }
             found.append(normalized(String(path.dropFirst(base.count + 1))))
         }
         return found

@@ -13,6 +13,68 @@ import XCTest
 /// under a walk in progress.
 @MainActor
 final class TravelPackImportTests: XCTestCase {
+    /// The installed pack is durable, while route progress and location are not.
+    func testTheLastVerifiedPackReturnsAfterRelaunchWithoutStartingLocation() async throws {
+        let fixture = try AppPackFixture()
+        defer { fixture.cleanup() }
+        let defaults = Self.emptyDefaults()
+        defer { defaults.removePersistentDomain(forName: defaultsSuite(defaults)) }
+        let first = AppModel(
+            packInstaller: TravelPackInstaller(root: fixture.store),
+            defaults: defaults
+        )
+        await first.importTravelPack(at: fixture.candidate)
+        let imported = try XCTUnwrap(first.installedPack, first.packImportMessage ?? "no message")
+
+        let relaunched = AppModel(
+            packInstaller: TravelPackInstaller(root: fixture.store),
+            defaults: defaults
+        )
+        await relaunched.restoreActiveTravelPack()
+
+        XCTAssertEqual(relaunched.installedPack?.packID, imported.packID)
+        XCTAssertEqual(relaunched.installedPack?.version, imported.version)
+        XCTAssertEqual(relaunched.walk.title, imported.title)
+        XCTAssertFalse(relaunched.isWalking)
+        XCTAssertNil(relaunched.walkSession)
+        XCTAssertNil(relaunched.walkLocation.latest)
+        XCTAssertNil(relaunched.packImportMessage, "a successful restore is not a new import")
+    }
+
+    /// The saved pointer cannot bless bytes changed after installation.
+    func testATamperedSavedPackFallsBackOnceAndClearsItsPointer() async throws {
+        let fixture = try AppPackFixture()
+        defer { fixture.cleanup() }
+        let defaults = Self.emptyDefaults()
+        defer { defaults.removePersistentDomain(forName: defaultsSuite(defaults)) }
+        let first = AppModel(
+            packInstaller: TravelPackInstaller(root: fixture.store),
+            defaults: defaults
+        )
+        await first.importTravelPack(at: fixture.candidate)
+        let installed = try XCTUnwrap(first.installedPack)
+        try Data("changed after install".utf8).write(
+            to: installed.rootURL.appendingPathComponent("notes.txt")
+        )
+
+        let relaunched = AppModel(
+            packInstaller: TravelPackInstaller(root: fixture.store),
+            defaults: defaults
+        )
+        let sampleTitle = relaunched.walk.title
+        await relaunched.restoreActiveTravelPack()
+
+        XCTAssertNil(relaunched.installedPack)
+        XCTAssertEqual(relaunched.walk.title, sampleTitle)
+        XCTAssertTrue(relaunched.packImportMessage?.contains("已不可用") == true)
+        XCTAssertNil(defaults.data(forKey: AppModel.activeTravelPackKey))
+        XCTAssertFalse(relaunched.isWalking)
+
+        relaunched.acknowledgePackMessage()
+        await relaunched.restoreActiveTravelPack()
+        XCTAssertNil(relaunched.packImportMessage, "a cleared pointer does not fail every launch")
+    }
+
     /// A verified pack becomes the walk, and the surface stops calling itself a
     /// sample.
     func testAVerifiedPackBecomesTheWalk() async throws {
@@ -138,15 +200,29 @@ final class TravelPackImportTests: XCTestCase {
             )
         }
     }
+
+    private static func emptyDefaults() -> UserDefaults {
+        let suite = "TravelPackImportTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defaults.set(suite, forKey: "test.suite-name")
+        return defaults
+    }
+
+    private func defaultsSuite(_ defaults: UserDefaults) -> String {
+        defaults.string(forKey: "test.suite-name")!
+    }
 }
 
 /// A valid pack on disk for the App-level path.
 private struct AppPackFixture {
     let root: URL
+    let store: URL
     let candidate: URL
 
     init() throws {
         root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        store = root.appendingPathComponent("store", isDirectory: true)
         candidate = root.appendingPathComponent("candidate", isDirectory: true)
         try FileManager.default.createDirectory(at: candidate, withIntermediateDirectories: true)
 

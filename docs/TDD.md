@@ -433,11 +433,15 @@ Live transcription accuracy is not a simulator claim: the recogniser needs real 
 
 ### 6.9 G2-J3A — Following a cached cultural walk
 
-`G2-J3A` makes the Map surface real. `RouteProgressEngine` and `JourneyContextStore` were both already built and tested; nothing joined them to a surface, so the second of the product's two primary surfaces was a card of fixed text with a dead button. This slice joins them. Tile rendering, turn-by-turn maneuvers, ETA and downloaded travel packs remain out of scope — DEC-004 promises a cached corridor, progress along it and guidance back, and this slice delivers exactly that.
+`G2-J3A` first joined `RouteProgressEngine` and `JourneyContextStore` to the Map
+surface. At that point the presentation was deliberately only a drawn corridor:
+tile rendering, turn-by-turn maneuvers, ETA and downloaded travel packs were out
+of scope. `G2-J5K` in §6.26 supersedes that presentation with a native MapKit
+basemap while preserving this slice's route-progress and offline boundaries.
 
 | Slice ID | Acceptance | Module / interface | Required evidence |
 |---|---|---|---|
-| `J3A-01` | The surface draws the cached route's own shape, the walked portion and the current position. There is no basemap and no claim to one | App / `MapExperienceView`, `CachedWalk.normalizedPath` | simulator evidence in `docs/STATUS.md` |
+| `J3A-01` | Historical G2-J3A presentation: draw the cached route's own shape, walked portion and current position. Superseded by `J5K-01`/`J5K-02`; the route semantics remain | App / `MapExperienceView` | simulator evidence in `docs/STATUS.md` |
 | `J3A-02` | Progress along the route is computed by `RouteProgressEngine` and recorded only by `JourneyContextStore`; the view holds a projection | App + OfflinePack + CompanionCore | `CachedWalkTests` journey-ownership case |
 | `J3A-03` | Leaving the corridor produces a distance and a walkable direction back, and arriving is distinguished from merely reaching 100% | App / `AppModel.walkGuidance` | departure, arrival and compass tests; simulated-location evidence |
 | `J3A-04` | Location is requested when-in-use only, on a deliberate tap, and stops with the walk; no background authorisation is ever requested | App / `WalkLocationProvider` | the system prompt offers no "always" option; foreground-only by construction |
@@ -796,10 +800,11 @@ accuracy, and the monotonicity test that found it is the acceptance for
 `J5D-02`.
 
 `JM-P0-009` is **partial**. This resolves places on a cached route and nothing
-else: there is no online place lookup, no arbitrary nearby search, and no
-freshness beyond "this came with the pack". `FAIL-018` is partial too, for a
-reason worth stating — a correction has nothing to be submitted *to*, so there is
-no remote case, no acknowledgement and no pending status.
+else. `G2-J5L` later adds read-only Apple Maps search, but a result remains a map
+presentation rather than a Joi-confirmed place or source, and cached narration
+still has no freshness beyond "this came with the pack". `FAIL-018` is partial
+too: Apple Maps search is intentionally not a correction service, so there is no
+remote correction case, acknowledgement or pending status.
 
 ### 6.20 G2-J5E — Settings, and the last dead control
 
@@ -975,9 +980,220 @@ accepted line under **「这句话没有语音，文字仍在。重试」**.
 partial, 8 absent. Real audio-route failures on a device — a Bluetooth device
 that disappears mid-fetch, a session another app holds — remain G4.
 
+### 6.24 G2-J5I — Taking your data out, and saying what is not in it
+
+`G2-J5I` gives `JM-P0-023`'s local half an implementation. PRD §6.4 has asked
+since G0 for an export that "distinguishes packages, conversations, memory,
+travel history and account data", and §4.1 above has named
+`DataExportRequestV1/ResultV1` for just as long. Nothing stood behind either.
+`MemoryRepository` was missing the `export` that §4.1's own repository line
+lists; Settings' privacy group ended on a row reading 导出尚未实现; and the last
+sentence of `FAIL-029`'s recorded gap was that export did not exist at all.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J5I-01` | Every PRD §6.4 category appears in the document exactly once, built from the enum rather than listed by hand | CompanionCore / `DataCategory` | `DataExportTests` |
+| `J5I-02` | "You have none" and "this build has none" are different values, and an absent feature carries its reason | CompanionCore / `DataExportCoverage` | absent-vs-empty test |
+| `J5I-03` | Memory exports every character's records, including characters that were removed | CompanionCore, App / `MemoryRepository.export` | whole-store test |
+| `J5I-04` | The open conversation is always `partial`, including when it is empty, because nothing keeps a conversation after the app closes | App / `DataExportBuilder` | conversation test |
+| `J5I-05` | Packages export as an inventory: no asset bytes, and no filesystem path anywhere in the file | App / `DataExportBuilder` | leak guard over the written bytes |
+| `J5I-06` | `FAIL-029`: an export that will not fit is refused with required and available, before anything is written | CompanionCore, App / `DataExportError.storageInsufficient` | refusal test |
+| `J5I-07` | A refused export leaves the previous one in place | App / `DataExportWriter` | previous-export test |
+| `J5I-08` | Byte count and digest are measured from the file re-read after the write; a file that does not read back is removed and reported as a failure | App / `DataExportWriter.write` | verification tests |
+| `J5I-09` | One export at a time: a new one replaces the previous rather than accumulating copies | App / `DataExportWriter` | replacement test |
+| `J5I-10` | A store that cannot be read fails the export instead of exporting nothing | App / `AppModel.produceDataExport` | unreadable-store test |
+| `J5I-11` | All visible copy, including the document's own prose, lives in the editable `zh-Hans` catalog | App / `Localizable.xcstrings` | surface-copy guard |
+
+**An empty category and an absent feature are different claims.** An empty array
+under `account` reads as "you have no account data", which is a statement about
+the user; the truth is "this build has no accounts", which is a statement about
+the app. `DataExportCoverage` keeps `empty` and `unavailable(reason:)` apart so
+the document cannot make the first claim when the second is true, and
+`RemoteExportAcknowledgement` has exactly one case for the same reason: a type
+with `pending` and `acknowledged` would describe a state nothing here can
+produce.
+
+**A package is exported as an inventory, not as its files.** DEC-010 is explicit
+that a hash proves integrity and not authorship, and a character's model,
+textures and motions belong to their author under the licence the package
+declares. Writing them out under the heading "your data" would make every export
+a redistribution the rights quarantine exists to prevent — and it would give the
+user nothing, because the file they imported is still theirs. The section says
+this where a reader will look for the missing files.
+
+**An export is only an export once it has been read back.** The result's byte
+count and digest are measured from the file on disk after the write, not from the
+bytes handed to the writer. A file that does not verify is removed and the
+attempt is reported as a failure; handing someone a document they believe holds
+their data, which does not, is worse than refusing.
+
+**The previous export is removed last.** Room is checked for the new document
+while the old one is still there, and the old one is deleted only after the new
+one has verified. Making room by destroying what the user already had is not an
+improvement over refusing.
+
+**Kilobytes, not megabytes.** DEC-039's refusal copy rounds to whole megabytes,
+which is right for a pack and useless for a text file: a 300 KB requirement
+against 96 KB of free space would print "1 MB" twice and explain nothing.
+
+**A defect found in passing.** `openFromSettings` gained a third destination, and
+checking where each one is presented showed that the memory list was hosted on
+`ChatStageView`. Reaching it from Settings while the Map surface was showing set
+the flag and opened nothing, because the sheet's host was not in the view
+hierarchy. Both Settings destinations now hang off `RootShellView`, where
+Settings itself is presented.
+
+`JM-P0-023` stays **partial**, and what remains is deliberate rather than
+overlooked. Deletion is still per-record and per-package: PRD §6.4's granular
+category deletion and complete-delete action are not built, and neither is any
+form of remote acknowledgement, tombstone or retention receipt — there is no
+server to acknowledge anything. `JM-P0-024`'s analytics do not exist. `FAIL-029`
+stays partial because character-package import still cannot say what it needs
+against what is free; that needs a widened failure taxonomy the Kotlin core
+mirrors and the conformance vectors cover, and is a contract decision of its own.
+
+### 6.25 G2-J5J — The verified walk survives a relaunch
+
+`G2-J5I` found that the travel-pack store was durable but Map was not: export
+could list a pack installed in an earlier process, while a new `AppModel` always
+started on `CachedWalk.sample`. `G2-J5J` makes the active pack durable without
+making route progress or location durable.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J5J-01` | `packID` and `version`, which form the sealed directory name, are bounded safe ASCII components in both JSON Schema and runtime validation | Contracts, OfflinePack / `TravelPackManifestV1`, `isSafeStoreIdentifier` | schema and traversal tests |
+| `J5J-02` | A successful import remembers the exact `packID + version`; launch never chooses a different installed identity on the user's behalf | App / `StoredTravelPackSelection` | relaunch test |
+| `J5J-03` | Restore repeats rights/expiry, declared hashes, undeclared-content and route-narrative validation before returning a walk | OfflinePack / `TravelPackInstaller.restore` | restore mutation tests |
+| `J5J-04` | A missing, expired or changed saved pack leaves the bundled sample in place, clears the stale pointer and says why once | App / `restoreActiveTravelPack` | tampered-pack fallback test |
+| `J5J-05` | Restoring content never restores progress, starts a walk, requests location or creates journey context | App / `RootShellView`, `AppModel` | relaunch state assertions |
+| `J5J-06` | All new visible recovery copy remains editable `zh-Hans` | App / `Localizable.xcstrings` | surface-copy guard |
+
+The saved value is a preference, not a receipt. It contains no path, coordinate,
+progress or source content, and it cannot make a sealed tree trusted: the pack
+must still prove itself from disk. A failed pointer is removed after the first
+attempt so every launch does not repeat the same failure.
+
+This slice also closes two path-boundary defects in the existing installer. A
+manifest previously required only non-empty `packID/version`, even though both
+were interpolated into a directory name; and `resolve(_:in:)` compared paths by
+lexical prefix, so a symlink from `candidate` to `candidate-escape` counted as
+inside. Identity now uses the same safe component profile as character-package
+IDs, and containment requires either the root itself or the root plus `/`.
+
+`JM-P0-014` remains **partial** for the same external/product gaps as before:
+there is no signature or download path, and airplane-mode navigation remains a
+real-device field gate. Restoration itself is deterministic simulator evidence;
+it is not flight-mode, GPS or storage-pressure evidence.
+
+### 6.26 G2-J5K — The Map surface becomes a real map
+
+The cached corridor delivered route semantics but not a usable map: it had no
+streets, place labels, pan or zoom, and it compressed every secondary action into
+one row. `G2-J5K` replaces that presentation with the system MapKit surface. It
+does not replace route truth: `RouteProgressEngine` still computes progress and
+departure, and `JourneyContextStore` still owns the journey snapshot.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J5K-01` | Map shows Apple's native standard basemap with provider-controlled labels/attribution and supports pan, zoom, rotation and selectable map POIs | App / `NativeMapSurface`, MapKit `Map` | simulator interaction and screenshot evidence |
+| `J5K-02` | The cached route, exact completed portion, ordered cultural stops and current walking position are separate overlays; progress ends between authored waypoints rather than jumping to one | App / `MapRoutePresentation`, `NativeMapSurface` | `MapPresentationTests` geometry cases |
+| `J5K-03` | Route overview fits every route coordinate; location focus follows new readings until the person manipulates the map; either view is recoverable with one labelled control | App / `MapCameraPosition`, `MapCameraMode` | geometry tests and simulator control evidence |
+| `J5K-04` | A persistent contextual drawer scrolls growing narration/error content while keeping secondary actions and the start/stop primary action above the Chat/Map switcher | App / `NativeMapSurface.contextDrawer` | idle, walking and off-route simulator evidence |
+| `J5K-05` | Copy distinguishes cached route/stops/narration from the network-dependent Apple basemap; no tile-download or arbitrary-offline-route claim is introduced | App / `Localizable.xcstrings`; DEC-044 | copy guard and Content/Trust review |
+| `J5K-06` | Showing Map starts no location work. The position overlay appears only during a user-started walk and disappears when that visible task ends | App / `WalkLocationProvider`, `NativeMapSurface` | existing first-run/location tests plus simulator state review |
+| `J5K-07` | All new visible copy remains editable `zh-Hans`, and the copy guard covers the new surface file rather than silently ignoring it | App + Tests / `Localizable.xcstrings`, `test_contracts.py` | repository copy tests |
+
+MapKit is a system framework, not a new package dependency or route provider.
+Selecting a map POI may show Apple's own place detail, but it does not become a
+Joi source, a confirmed route stop, a chat attachment or memory. The Map header
+continues to label the route pack's integrity separately from map data.
+
+This slice proves interactive presentation and deterministic simulated-location
+behavior. It does **not** prove outdoor GPS, flight-mode basemap availability,
+downloadable map tiles, background location or arbitrary route computation.
+MapLibre remains the candidate seam for rights-cleared offline corridor resources;
+admitting it is a separate dependency/data-right decision rather than a hidden
+consequence of making today's Map usable.
+
+### 6.27 G2-J5L — Search a place without turning it into journey truth
+
+`G2-J5K` made Map spatially usable, but its only discovery path was tapping a
+provider POI already visible on screen. A person who knows a name or address —
+including someone who denied location — still had no direct way to find it.
+`G2-J5L` adds explicit online Apple Maps search while keeping search results out
+of Joi's confirmed-place, source, route, conversation and memory contracts.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J5L-01` | Search starts only after an explicit submit; whitespace submits nothing, and known-offline state refuses before invoking the provider while leaving the cached route usable | App / `MapSearchModel`, `NetworkReachability` | `MapSearchTests` blank/offline cases |
+| `J5L-02` | The Apple request receives the submitted text and authored route region, never the current GPS reading; adjacent copy discloses the provider, transmitted fields and no-history rule | App / `AppleMapSearchProvider`, `MapSearchSheet` | provider-region test, simulator copy review |
+| `J5L-03` | A newer query cancels the older task and generation-checks the result, so a provider returning late cannot replace the current results | App / `MapSearchModel` | stale-result test |
+| `J5L-04` | Results are bounded to 12 and empty, offline and provider-failure states remain distinct and retryable without showing raw errors | App / `MapSearchPhase`, `MapSearchSheet` | result-bound and degraded-state tests |
+| `J5L-05` | Selecting a result dismisses search, centers an 800 m map region and shows a removable marker/name/address; it writes no route, journey, confirmed stop, source, transcript or memory | App / `NativeMapSurface`, `MapRoutePresentation` | geometry test and simulator selection/clear evidence |
+| `J5L-06` | Closing search cancels work and clears both query and results; reopening starts empty, so the App owns no hidden search history | App / `MapSearchModel.clear` | clear/cancellation test and simulator reopen evidence |
+| `J5L-07` | All new visible copy is editable `zh-Hans`, and the product-surface guard includes the new search file | App + Tests / `Localizable.xcstrings`, `test_contracts.py` | catalog parse and surface-copy guard |
+
+Search is an online MapKit adapter, not an official Joi place service. This
+slice does not close Journey 3: Chat still emits no inspected “Open in Map”
+intent, selecting a result does not create a cultural route, and ambiguity is
+not resolved into a sourced Joi identity. It also does not close `FAIL-018`; a
+local correction still has no remote submission or acknowledgement. DEC-045.
+
+### 6.28 G2-J5M — Inspect Chat intent before Map receives it
+
+`G2-J5L` made place search explicit once a person was already on Map, but the
+same words in Chat had no safe path across the surface boundary. `G2-J5M` adds a
+manual, inspected handoff from an accepted user line. It deliberately does not
+infer place intent from companion prose or pretend that a string is a confirmed
+place: the person chooses the line, edits the exact query, confirms the surface
+change, and still submits the Apple Maps search separately.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J5M-01` | Only a non-empty, accepted user line in the active transcript offers “在地图中查找”; companion lines and fabricated entries cannot open the flow | App / `AppModel.canOpenInMap`, `TranscriptDrawer` | `MapHandoffTests` eligibility cases |
+| `J5M-02` | Opening the proposal writes nothing and changes no surface; cancelling returns to the still-open transcript with session, journey and transcript unchanged | App / `MapHandoffDraft`, `MapHandoffPreviewSheet` | proposal/cancel owner-state test and simulator preview |
+| `J5M-03` | The original line remains inspectable beside an editable query; an empty edit cannot cross the boundary | App / `MapHandoffPreviewSheet`, `AppModel.acceptMapHandoff` | empty/edit acceptance tests |
+| `J5M-04` | Acceptance switches to Map with the same character, thread, session and transcript and issues the edited query exactly once | App / `AppModel`, `RootShellView`, `NativeMapSurface` | continuity and one-time-consumption test |
+| `J5M-05` | Map opens its existing search sheet in idle state with the query prefilled; handoff never invokes the Apple adapter, so Search remains a second explicit consent action | App / `MapSearchModel.prepare`, `MapSearchSheet` | provider-zero-call test and simulator idle-state evidence |
+| `J5M-06` | Handoff state is App-only and transient; no public CompanionCore/Kotlin/JSON contract, owner store, defaults, log, memory, source, route or location state changes | App / transient observation state | owner snapshots, contract diff review |
+| `J5M-07` | New visible disclosure/action copy is editable `zh-Hans` and included in the product-surface guard | App + Tests / `Localizable.xcstrings`, `test_contracts.py` | catalog parse and copy guard |
+
+This closes the inspected manual Chat → Map transfer branch of Journey 3, not
+the whole journey. The backend still emits no typed place-intent offer; therefore
+the App exposes the action on accepted user lines instead of using keyword or
+model heuristics. Apple search still does not resolve a result into a sourced Joi
+place, create a cultural route or begin navigation. DEC-046.
+
+### 6.29 G2-J5N — Hand a selected driving destination to system Maps
+
+`G2-J5L` could center a selected Apple result, but the result was a visual dead
+end. Worse, the unchanged “开始步行” button directly beneath it could be read as
+walking to that result even though it started the unrelated cached cultural
+route. `G2-J5N` makes the boundary explicit: the selected result becomes an
+inspectable external driving destination, and only a second confirmation hands
+its name and coordinate to Apple Maps. Joi never plans or records that route.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J5N-01` | An idle selected result replaces the cached-walk primary action with “用 Apple 地图驾车” and says it is not a stop on the current cultural route; returning to the route restores the original walk action | App / `NativeMapSurface` | simulator selected/clear states and editable-copy guard |
+| `J5N-02` | Tapping the driving action is inspect-only; the confirmation names the destination and transmitted fields, while cancellation invokes no external adapter and changes no App owner state | App / `SystemMapHandoffModel`, confirmation dialog | cancellation/zero-call test and simulator cancel flow |
+| `J5N-03` | Confirmation forwards exactly the selected name and coordinate with driving mode; Apple Maps owns route planning and any later location permission, while Joi sends no transcript, memory, cached route or Joi-held location | App / `AppleSystemMapOpener` | exact-destination adapter test and interface review |
+| `J5N-04` | A confirmation is consumed before launch and cannot open twice; an invalid coordinate never reaches the adapter, and an opening refusal keeps the destination with an explicit retry path | App / `SystemMapHandoffPhase` | once-only, invalid and refusal/retry tests |
+| `J5N-05` | An active cultural walk cannot be handed off underneath its current task: the UI first ends the walk, removes its visible location/follow state, then exposes the still-selected external destination | App / `NativeMapSurface`, `AppModel.stopWalk` | simulator walking-state transition review |
+| `J5N-06` | The handoff is App-only and transient: no public Swift/Kotlin/JSON contract, `JourneyContextStore` route/progress, cached route, confirmed Joi place, source, transcript, memory, defaults or analytics state is created | App / transient observation state | owner/contract diff review |
+| `J5N-07` | `FAIL-028` is executable and all new visible copy remains editable `zh-Hans` | Contracts + App + Tests / failure corpus, `Localizable.xcstrings` | `SystemMapHandoffTests`, corpus and copy guards |
+
+This closes `FAIL-028` and makes Journey 3's external driving-destination branch
+functional. It does not turn an Apple result into a Joi place, create an in-app
+cultural route, implement the backend `/v1/routes` planner or prove device GPS,
+field behavior or Apple Maps availability. Typed contextual offers and cultural
+route selection remain open. DEC-047.
+
 ## 7. Map, navigation and offline PoC
 
-- Wrap MapLibre Native in `MapSurfaceProvider`; it renders online styles and verified downloaded corridor resources but never owns route truth.
+- The current online basemap is native MapKit and never owns route truth. A later
+  MapLibre `MapSurfaceProvider` may render verified downloaded corridor resources
+  only after its dependency, style/font/tile and redistribution gates close.
 - Wrap Ferrostar in `NavigationSessionAdapter`; it consumes a route and emits progress/maneuver/off-route events through `NavigationProvider`.
 - Use an online backend route endpoint compatible with Valhalla request/response semantics. Provider changes remain server-side/adapted.
 - Store a travel pack atomically and activate only after schema, version, hash/signature, rights and completeness checks.
@@ -1114,25 +1330,25 @@ The first slice is complete when traceability, XcodeGen generation, generic simu
 | JM-P0-002 | Local-first first run | App, CharacterRuntime | `AppModel`, `WelcomeView`, package importer | `FirstRunTests`, `ContractArtifactTests` permission-boundary guard | G2 |
 | JM-P0-003 | Full Chat stage | ChatFeature, CharacterRuntime, App | `ChatGateway`, `ChatTurnProjection`, `CharacterRenderer` | `ChatTurnProjectionTests`, `AppModelTests` chat turn cases | G2/G4 |
 | JM-P0-004 | Official AI boundary | ChatFeature, Backend | OpenAPI `/v1/chat/streams`, `SSEChatGateway`, `ChatBackendEndpoint`, `SendPrecondition` | `SSEChatGatewayTests`, `MockBackendIntegrationTests`, `ReachabilityTests`, secret scan | G1/G3 |
-| JM-P0-005 | Layered local memory | CompanionCore, App, SyncClient | `MemoryRepository`, `MemoryProposalV1`, `MemoryRecordV1` | `MemoryProposalTests`, `StateOwnerTests` location case | G3 |
-| JM-P0-006 | Cross-surface continuity | CompanionCore, App | `CompanionSessionStore`, `JourneyContextSnapshot`, `JourneyUseReceiptV1` | `JourneyConsentTests`, `JourneyAttachmentTests` | G1/G3 |
+| JM-P0-005 | Layered local memory | CompanionCore, App, SyncClient | `MemoryRepository`, `MemoryProposalV1`, `MemoryRecordV1` | `MemoryProposalTests`, `StateOwnerTests` location case, `DataExportTests` whole-store case | G3 |
+| JM-P0-006 | Cross-surface continuity | CompanionCore, App | `CompanionSessionStore`, `JourneyContextSnapshot`, `JourneyUseReceiptV1` | `JourneyConsentTests`, `JourneyAttachmentTests`, `MapHandoffTests` | G1/G3 |
 | JM-P0-007 | Speech coordination | CompanionCore, App | `SpeechCoordinator`, `MouthOpening`, `SpeechInterruptionPolicy` | `SpeechCoordinationTests`, `MouthOpeningTests`, `SpeechInterruptionTests`, `SpeechFailureTests`; real call/Siri/headset evidence remains G4 | G2/G4 |
-| JM-P0-008 | Persistent Map experience | MapFeature, App | `JourneyContextStore`, drawer state | `MapExperienceStateTests`, `CachedWalkTests` | G2/G4 |
-| JM-P0-009 | Arrive-and-tell | OfflinePack, App | `PlaceResolver`, `PlaceProposal`, `ConfirmedPlace` | `PlaceResolverTests`, `ArriveAndTellTests`; **partial** — cached-route places only, no online lookup; GPS field script remains G4 | G2/G4 |
+| JM-P0-008 | Persistent Map experience | MapFeature, App | `JourneyContextStore`, MapKit presentation, drawer state | `CachedWalkTests`, `MapPresentationTests` | G2/G4 |
+| JM-P0-009 | Arrive-and-tell | OfflinePack, App | `PlaceResolver`, `PlaceProposal`, `ConfirmedPlace`, `MapSearchModel` | `PlaceResolverTests`, `ArriveAndTellTests`, `MapSearchTests`; **partial** — Apple search results remain presentation-only rather than confirmed/sourced Joi places; GPS field script remains G4 | G2/G4 |
 | JM-P0-010 | See-and-ask | MapFeature, Backend | vision upload contract | **not implemented** — no capture or recognition path exists | G3/G4 |
 | JM-P0-011 | Cultural walking navigation | MapFeature, Backend | `NavigationProvider`, route API | `RouteProgressEngineTests`, `CachedWalkTests`; **no Ferrostar integration**, outdoor walk remains G4 | G2/G4 |
 | JM-P0-012 | Routes-as-narrative | OfflinePack, App | `RouteStop`, `RouteNarrative`, `RecapEntry` | `RouteNarrativeTests`, `RouteStoryTests` | G2 |
 | JM-P0-013 | Trusted sources | CompanionCore, MapFeature, App | `SourceProjectionV1`, `SourceEligibility`, `ClaimSupport` | `SourceEligibilityTests`, `SourceProjectionTests`; **partial** — no backend produces sources yet | G2/G3 |
-| JM-P0-014 | Offline travel pack | OfflinePack, App | `TravelPackManifestV1`, `TravelPackContentV1`, `TravelPackInstaller` | `TravelPackInstallerTests`, `TravelPackImportTests`, `OfflinePackVerifierTests`; **partial** — no signature and no download; flight-mode walk remains G4 | G2/G4/G5 |
+| JM-P0-014 | Offline travel pack | OfflinePack, App | `TravelPackManifestV1`, `TravelPackContentV1`, `TravelPackInstaller` | `TravelPackInstallerTests`, `TravelPackImportTests`, `OfflinePackVerifierTests`; install and relaunch restoration covered; **partial** — no signature and no download; flight-mode walk remains G4 | G2/G4/G5 |
 | JM-P0-015 | Character library/import | CharacterRuntime, App | `CharacterPackageManifestV1`, `CharacterMotionV1` | `CharacterPackageInstallerTests`, `CharacterPackageValidatorTests` | G2/G3/G5 |
 | JM-P0-016 | Native renderer parity | CharacterRuntime | `CharacterRenderer`, compatibility receipt, `CharacterContentAccess.motions` | `Live2DNativeAdapterTests`, `VRMNativeAdapterTests`; device matrix remains G4 | G4/G5 |
 | JM-P0-017 | Package isolation/safety | CharacterRuntime, Contracts | package schema and validator | `CharacterPackageValidatorTests`, `RestrictedZIPConformanceTests`, `CrossPlatformConformanceTests` | G1/G3 |
-| JM-P0-018 | Secondary controls | App, SyncClient | `SettingsGroup`, `SettingsCatalog`, `SettingsBuildFacts` | `SettingsTests`, `AppModelTests`, `MemoryProposalTests`; **partial** — all eight PRD §6.4 groups are present and honest, three route to something real; voice, appearance, downloads, account, sync and export are stated as unimplemented | G2 |
+| JM-P0-018 | Secondary controls | App, SyncClient | `SettingsGroup`, `SettingsCatalog`, `SettingsBuildFacts` | `SettingsTests`, `AppModelTests`, `MemoryProposalTests`, `DataExportTests`; **partial** — all eight PRD §6.4 groups are present and honest, four route to something real; voice, appearance, downloads, account and sync are stated as unimplemented | G2 |
 | JM-P0-019 | Optional category sync | SyncClient, Backend | `SyncGateway`, `MemorySyncRecordV1`, `CharacterPackageSyncRecordV1`, `LocationSyncAuthorizationV1` | `SyncConsentStoreTests`, `StateOwnerTests` location case; **no sync client or cursor/tombstone replay exists** | G3 |
 | JM-P0-020 | Editable Simplified-Chinese copy | App, all features, Backend | String Catalog, locale context and cache-key contract | `ContractArtifactTests` catalog and surface-copy cases | G1/G2 |
 | JM-P0-021 | Deferred experience hooks | App, all UI features | semantic labels, system text styles and motion-policy seams | shell hook smoke tests; full matrix deferred | G1 / later accessibility gate |
 | JM-P0-022 | Failure/recovery contract | all modules | typed error/state enums, `Contracts/failure-states.json` | `FailureStateTests`, `ContractArtifactTests` corpus cases, `AppModelTests`, `ChatSessionControllerTests`; **partial** — 19 of 32 states implemented, 5 partial, 8 absent, and every remaining absent one belongs to a feature that does not exist yet (see-and-ask, sync, accounts) | G2/G3 |
-| JM-P0-023 | Data-purpose governance | App, Backend, SyncClient | consent/media receipts, export and deletion request/status contracts | **partial** — local memory deletion is covered by `MemoryProposalTests`; no export, no server acknowledgement | G3/G6 |
+| JM-P0-023 | Data-purpose governance | App, Backend, SyncClient | `DataExportRequestV1`, `DataExportResultV1`, `MemoryRepository.export`; consent/media receipts and deletion request/status contracts | `DataExportTests`, `MemoryProposalTests` deletion cases; **partial** — local export and per-record/per-package deletion exist; granular category deletion, complete-delete and every remote acknowledgement do not | G3/G6 |
 | JM-P0-024 | Privacy-safe quality metrics | App, Backend | analytics allowlist | **not implemented** — no analytics exist; `ProviderConfidentialityTests` covers only proxy redaction | G3/G6 |
 
 ## 13. Scheme Gate decisions after G0 rework

@@ -302,6 +302,10 @@ class ContractArtifactTests(unittest.TestCase):
             # G2-J3A/J3B put visible copy on the Map surface and in the journey
             # attachment, so both are guarded here rather than only Chat.
             "JoiMobile/App/MapExperienceView.swift",
+            "JoiMobile/App/NativeMapSurface.swift",
+            "JoiMobile/App/MapSearch.swift",
+            "JoiMobile/App/MapHandoff.swift",
+            "JoiMobile/App/SystemMapHandoff.swift",
             "JoiMobile/App/JourneyAttachment.swift",
             "JoiMobile/App/AppModel.swift",
             # G2-J2D memory proposal, list and category labels.
@@ -319,6 +323,11 @@ class ContractArtifactTests(unittest.TestCase):
             # G2-J5H puts the reason a line had no voice on `SpeechFailure`
             # itself, so the copy lives beside the state rather than in a view.
             "JoiMobile/App/SpeechPlayback.swift",
+            # G2-J5I. The export screen, and the document itself: a person opens
+            # the exported file and reads its prose, so those sentences are
+            # product copy and belong in the same editable catalog.
+            "JoiMobile/App/DataExportView.swift",
+            "JoiMobile/App/DataExport.swift",
         ]
         missing: list[str] = []
         for name in surface:
@@ -396,6 +405,43 @@ class ContractArtifactTests(unittest.TestCase):
         absolute_source = deepcopy(fixture)
         absolute_source["provenance"]["source"] = "/private/avatar.vrm"
         self.assertTrue(list(validator.iter_errors(absolute_source)))
+
+    def test_travel_pack_store_identity_is_one_safe_path_component(self) -> None:
+        """The runtime seals a pack under `packID@version`.
+
+        The schema has to reject values that would turn either half into a path;
+        relying on the Swift call site alone would leave another importer free
+        to reproduce the traversal.
+        """
+        schema = json.loads(
+            (CONTRACTS / "travel-pack-manifest-v1.schema.json").read_text(encoding="utf-8")
+        )
+        base = {
+            "schema": "joi.travel-pack.v1",
+            "packID": "pack.test",
+            "routeID": "pack.route",
+            "version": "1.0.0",
+            "locales": ["zh-Hans"],
+            "routePath": "route.json",
+            "files": [],
+            "sourceRevisionIDs": [],
+            "rights": ["Repository-authored test fixture"],
+            "createdAt": "2026-08-18T00:00:00Z",
+        }
+        validator = Draft202012Validator(schema, format_checker=FormatChecker())
+        self.assertEqual(list(validator.iter_errors(base)), [])
+
+        for field, value in (
+            ("packID", "../outside"),
+            ("packID", "/absolute"),
+            ("packID", "旅行包"),
+            ("version", "1/next"),
+            ("version", ".."),
+        ):
+            document = deepcopy(base)
+            document[field] = value
+            with self.subTest(field=field, value=value):
+                self.assertTrue(list(validator.iter_errors(document)))
 
     def test_the_declared_asset_bound_is_one_number_in_every_artifact(self) -> None:
         """DEC-028: the defect was three artifacts disagreeing in silence.

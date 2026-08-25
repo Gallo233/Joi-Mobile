@@ -111,6 +111,9 @@ struct TranscriptDrawer: View {
     /// What stands behind each answer, and how to open it (`G2-J3C`).
     var claimSupport: (TranscriptEntry) -> ClaimSupport = { _ in .unsourced }
     var onOpenSources: (TranscriptEntry) -> Void = { _ in }
+    /// Explicit, inspected Chat → Map handoff (`G2-J5M`).
+    var canOpenInMap: (TranscriptEntry) -> Bool = { _ in false }
+    var onOpenInMap: (TranscriptEntry) -> Void = { _ in }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -148,6 +151,9 @@ struct TranscriptDrawer: View {
                                     onOpenSources: claimSupport(entry) == .unsourced
                                         ? nil
                                         : { onOpenSources(entry) },
+                                    onOpenInMap: canOpenInMap(entry)
+                                        ? { onOpenInMap(entry) }
+                                        : nil,
                                     sourcesWithheld: {
                                         if case .withheld = claimSupport(entry) { return true }
                                         return false
@@ -183,6 +189,8 @@ private struct TranscriptRow: View {
     /// `nil` when this answer carried no sources at all. An unsourced line has
     /// nothing to open, and offering an empty list would imply otherwise.
     var onOpenSources: (() -> Void)?
+    /// Present only for accepted user lines in the active transcript.
+    var onOpenInMap: (() -> Void)?
     /// True when the answer arrived with citations and none of them may stand.
     /// Marked on the line itself rather than only inside the sheet, because a
     /// reader who never opens it still needs to know.
@@ -231,6 +239,15 @@ private struct TranscriptRow: View {
                 )
                 .foregroundStyle(isUser ? AnyShapeStyle(Color.white) : AnyShapeStyle(Color.primary))
                 .textSelection(.enabled)
+            if let onOpenInMap {
+                Button(action: onOpenInMap) {
+                    Label(String(localized: "在地图中查找"), systemImage: "map")
+                }
+                .font(.caption.weight(.semibold))
+                .buttonStyle(.plain)
+                .foregroundStyle(.indigo)
+                .accessibilityHint(String(localized: "先检查和编辑搜索文字"))
+            }
         }
         .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
         .accessibilityElement(children: .combine)

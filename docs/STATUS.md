@@ -1,10 +1,41 @@
 # Joi Mobile Status
 
-Last updated: 2026-08-19
+Last updated: 2026-08-25
 
 ## Current phase
 
+`G2-J5N` turns a selected Apple search marker into an explicit, usable driving
+destination without making it Joi route truth. The result drawer now says it is
+not a stop on the current cultural route, replaces the misleading “开始步行”
+action with “用 Apple 地图驾车”, and requires a second confirmation naming the
+destination and transmitted fields. Only the selected name and coordinate leave
+the App; Apple Maps owns route planning and any later location permission. Cancel
+makes no call, invalid coordinates never leave, a refusal preserves the result
+for explicit retry, and a running cultural walk must end before handoff. No Joi
+route, progress, confirmed place, source, transcript, memory or persistence is
+written. `FAIL-028` is closed; cultural route creation and the typed backend
+place-intent/route path remain open. DEC-047.
+
+`G2-J5M` adds the missing inspected Chat → Map branch. An accepted user line in
+the active transcript now offers “在地图中查找”; the preview keeps the original
+visible, lets the person edit the exact search text and says that conversation,
+location and memory will not travel. Cancel returns to the unchanged transcript.
+Accept keeps the same character/thread/session, switches to Map and opens the
+existing Apple search sheet with the text prefilled once — still idle, with no
+provider call until Search is pressed. No keyword/model place inference, public
+contract, owner state, persistence or location was added. Journey 3 remains
+partial because no backend emits a typed contextual offer and an Apple result
+still cannot become a sourced Joi place or cultural route. DEC-046.
+
+`G2-J5L` gives the real Map a direct discovery path. A deliberate search submits the entered name/address and the authored route range to Apple Maps, returns at most 12 results, and lets one selection center a transient marker with its name and address. Blank and known-offline requests never reach the provider; a new request cancels and generation-gates the old one; empty, offline and failed remain distinct; closing the sheet cancels work and clears the query/results. No live GPS reading participates in search, and a result is presentation only — it does not become a route, confirmed Joi place, source, journey attachment, transcript fact or memory. The running simulator returned eight real matches for 上海博物馆, centered the selected 人民广场馆 result, restored the route on clear, and reopened with no search history. `G2-J5M` has since closed the inspected manual Chat handoff; cultural route creation remains open. DEC-045.
+
+`G2-J5K` replaces Map's route-shaped placeholder with a usable native MapKit surface. The verified or bundled walk now appears over Apple's interactive street and POI map with the full route, completed segment, numbered stops and the accepted walking position; people can pan and zoom, restore the route overview, follow their current position after starting, inspect a selected map feature, review the itinerary, ask in Chat and end the walk without leaving the surface. The persistent drawer keeps route state and the primary action reachable instead of compressing them into one row. The boundary is explicit: the route, stops, narration, progress and return-to-route guidance are cached Joi data, while Apple's basemap needs a network connection. Entering Map still requests no location; location starts only with the walk and is retired when it ends. Search, arbitrary route planning, turn-by-turn driving, downloadable/offline basemap tiles and a production MapLibre/Ferrostar integration remain outside this slice. DEC-044.
+
 G1 deterministic foundation and the bounded `G2-J1A` preview slice are published to the private GitHub repository `Gallo233/Joi-Mobile`. The local `G2-J1B` import/install/activation/removal implementation has closed its first Closeout rework and is a Director re-review candidate on branch `codex/j1b-character-installer`. No deployment, cloud resource, vendor contact, license application, App Store submission or J1B remote push has been made.
+
+`G2-J5J` closes the persistence gap `G2-J5I` exposed: the travel-pack store survived a process, but Map forgot which verified walk was active and returned to the bundled sample. A successful import now remembers only the exact `packID + version`; launch reopens that sealed identity and repeats rights/expiry, hash, undeclared-content and route-narrative checks before using it. Missing or changed bytes leave the sample in place, clear the stale pointer and explain the fallback once. Progress, location and journey context remain deliberately transient, and restore never starts location. This pass also closed two installer path defects: the two manifest fields used in the store directory name were only checked for non-emptiness, and a symlink to a same-prefix sibling such as `candidate-escape` passed the old lexical containment check. DEC-043.
+
+`G2-J5I` gave `JM-P0-023` its local half. PRD §6.4 has asked since G0 for an export that keeps packages, conversations, memory, travel history and account data apart, and TDD §4.1 has named `DataExportRequestV1/ResultV1` for as long — with nothing behind either, a Settings row that read 导出尚未实现, and a `MemoryRepository` missing the `export` its own contract line lists. One file now carries the whole memory store, the open conversation and an inventory of what is installed; it is written to staging, moved, re-read and hashed, and the result's size and digest describe the file that landed rather than the bytes handed to the writer. The two decisions worth stating are that a package's assets stay behind — a hash proves integrity and not the right to redistribute (DEC-010), and the user still holds the file they imported — and that "you have none" and "this build has none" are different values, so an empty list can never stand in for an absent feature. Building it found two defects in already-written work: the memory list was hosted on the Chat surface, so reaching it from Settings while Map was showing opened nothing, and the export's own first draft asked the App which travel pack was installed — which then answered "imported during this session", because at that point nothing reloaded a pack at launch. Deletion is still per record and per package; PRD §6.4's granular category deletion, complete-delete and every remote acknowledgement remain unbuilt, so `JM-P0-023` stays partial.
 
 On 2026-08-19 the character stage failed to draw a model for the third time, and the cause was the same each time: the required check lane regenerates `JoiMobile.xcodeproj` from the rung of the spec ladder that admits no vendor runtime, and nothing put the native project back. The stage then drew its static silhouette — correctly — and looked exactly like a broken model. The build was restored, and the reason it could recur was closed rather than the symptom: the stage now tells apart the three situations that all produced one silhouette, `AGENTS.md`'s check block carries its own repair with a test on the ordering, and the ladder specs declare their flags to the test target as well as the app, which had been letting `#if JOI_VRM` in tests silently mean nothing.
 
@@ -61,6 +92,62 @@ On 2026-08-12 the J1B candidate was independently re-verified on this workstatio
 - Ownership: Character Runtime alone owns staging, ZIP policy, adapters, immutable storage, activation leases and deletion recovery; App owns UI orchestration; `CompanionSessionStore` remains the sole active-selection writer.
 - Frozen boundaries: exact ZIPFoundation pin only; no Cubism/VRM native runtime admission; private fixtures are process-only inputs; no asset path/payload in Git, product logs or bundle.
 - Deferred by design: native animation/fidelity/performance are G4; retained redistribution/license receipts are G5; sync/export/update/signatures, extra languages and full accessibility remain later work.
+
+### G2-J5K Studio brief
+
+- Outcome: make the existing cached walking route usable on a real interactive map, without widening the route, location or offline contracts.
+- Crew: Studio Director and Product, Technical, Content & Trust, Trust & Safety and Quality Directors, executed sequentially by the Studio integrator at the user's request; no subagent was used.
+- Ownership: the App owns MapKit presentation and editable `zh-Hans` copy; `JourneyContextStore` remains the only progress owner and `AppModel` only orchestrates the already-frozen route/location boundaries. No public contract changed.
+- Frozen boundary: MapKit is an online presentation layer; Joi's cached route, stops, narration, progress and return-to-route guidance remain the only offline-capable facts. Opening Map does not request location.
+- Deferred by design: place search, arbitrary route planning, driving navigation, downloadable tile regions, offline MapLibre/Ferrostar runtime, additional languages and complete VoiceOver/Dynamic Type/Reduce Motion validation.
+
+### G2-J5L Studio brief
+
+- Outcome: search a known place or address from Map, choose it and recover to the cached route, with explicit online/provider truth and no hidden search history.
+- Crew: Studio Director plus sequential Product, Technical, Content & Trust, Trust & Safety and Quality passes; the Studio integrator was the sole writer and no subagent was used.
+- Ownership: App owns `MapSearchModel`, the MapKit adapter/UI and editable `zh-Hans` copy; the Studio integrator owns tests and durable evidence. Public contracts, `project.yml`, `CompanionSessionStore`, `JourneyContextStore` and `SpeechCoordinator` are frozen.
+- Privacy boundary: submit is the only request trigger; text and authored route range go to Apple Maps, never the live GPS fix. Query/results are transient and do not enter logs, defaults, journey, conversation, memory or analytics.
+- Deferred by design: Chat-to-Map intent handoff, Joi place confirmation/correction service, cultural route creation, directions, cached search, offline basemap, additional languages and complete accessibility/device validation.
+
+### G2-J5M Studio brief
+
+- Outcome: let a person inspect and edit one accepted Chat line before carrying it to Map search, while keeping search submission separate.
+- Crew: sequential Studio Director plus Product, Technical, AI & Companion, Content & Trust, Trust & Safety, Map/Offline and Quality passes; the Studio integrator was the sole writer and no subagent was used at the user's request.
+- Ownership: App alone owns the transient proposal, one-time query and editable `zh-Hans` UI. Public contracts, `project.yml`, localization ownership, `CompanionSessionStore`, `JourneyContextStore` and `SpeechCoordinator` stayed frozen.
+- Privacy boundary: proposal/cancel make no request or owner write; acceptance transfers only the edited string inside the App; the existing Map Search action remains the sole Apple Maps request trigger.
+- Deferred by design: typed backend place-intent offers, Joi place disambiguation/correction, cultural route creation, directions, Android UI, additional languages and complete accessibility/device validation.
+
+### G2-J5M Scheme decisions
+
+| Director | Decision | Conditions / owner |
+|---|---|---|
+| Product Design | Approved with conditions | The action is explicit and the query inspectable/editable; a future contextual offer needs a typed backend intent instead of client heuristics. |
+| Technical | Approved | App-only transient state preserves all three unique owners and changes no public/cross-platform contract. |
+| AI & Companion | Approved with conditions | Only accepted user prose may be selected; companion text is never promoted to intent. Typed ambiguity/place candidates remain a backend gap. |
+| Content & Trust | Approved with conditions | The preview labels selected words rather than place truth and all visible copy is editable `zh-Hans`; additional languages remain deferred. |
+| Trust & Safety | Approved | The first confirmation transfers one edited string inside the App; provider transmission remains a second explicit Search action. No location, transcript bundle or memory travels. |
+| Map / Offline | Approved with conditions | Existing online search receives the prefill and remains idle; result → sourced Joi place and cultural route creation remain open. |
+| Quality & Release | Approved with conditions | Cancel/empty/continuity/one-time/provider-zero-call tests and simulator flow are required; device and complete accessibility evidence remain open. |
+
+### G2-J5N Studio brief
+
+- Outcome: make an inspected Apple search result an actionable external driving destination, while keeping the cached cultural route and Joi journey truth unchanged.
+- Crew: sequential Studio Director plus Product, Technical, Content & Trust, Trust & Safety, Map/Offline and Quality passes; the Studio integrator is the sole writer and no subagent was used at the user's request.
+- Ownership: App alone owns the transient proposal/refusal state and Apple Maps adapter; public contracts, `project.yml`, localization ownership, `CompanionSessionStore`, `JourneyContextStore` and `SpeechCoordinator` are frozen.
+- Privacy boundary: proposal/cancel sends nothing; confirmation sends only the selected Apple-result name and coordinate. Chat, memory, cached geometry and Joi's current location never cross; Apple Maps owns directions and any subsequent location use.
+- Recovery: an active walk ends first; invalid coordinates invoke no adapter; a system refusal keeps the selected destination and requires another explicit confirmation.
+- Deferred by design: in-app route planning, cultural-route creation, typed backend intent and `/v1/routes`, walking/driving ETA or maneuvers, Android UI, additional languages and complete accessibility/device validation.
+
+### G2-J5N Scheme decisions
+
+| Director | Decision | Conditions / owner |
+|---|---|---|
+| Product Design | Approved with conditions | Selected-result state must replace the unrelated cached-walk primary action and retain a one-tap return to the cultural route. |
+| Technical | Approved | The App-only adapter may open system Maps but may not implement `MKDirections`, mutate route owners or widen public/cross-platform contracts. |
+| Content & Trust | Approved with conditions | Apple origin, non-cultural-route status and the fields leaving the App must be adjacent to the action in editable `zh-Hans`. |
+| Trust & Safety | Approved | A second confirmation is mandatory; cancel is zero-call; no transcript, memory or Joi-held location travels. Veto retained. |
+| Map / Offline | Approved with conditions | Driving is external; cached walking remains in Joi. The result is never promoted to a confirmed stop, source or offline route. |
+| Quality & Release | Approved with conditions | Once-only, invalid, refusal/retry and cancellation tests, failure-corpus closure, simulator UI and final native restore are required; device/system-provider evidence remains open. |
 
 ## Scheme gates
 
@@ -270,8 +357,33 @@ G0 is closed with no `Rework` or `Blocked` decision. Public contract implementat
 | 2026-08-19 | The artwork is a mock-up, and an icon is not | **Handled in the tool** | It arrives as a 1254px page: pale background, drop shadow, corners already rounded. An iOS icon is the opposite — full-bleed, square, unrounded, because the system masks it and a pre-rounded icon gets rounded twice and shows pale corners. The tool finds the icon by its warmth (red runs 0.063 ahead of blue in the artwork against 0.015 on the page), squares it, and repaints the corners in the artwork's own sampled background |
 | 2026-08-19 | Squaring the crop by its larger side put strips down both edges | **Fail before fix** | The drop shadow beneath the icon is warm enough to pass the same test as the artwork, so the detected run was 830 wide by 846 tall. Taking the larger side — the obvious reading of "square it off" — pushed the crop past the left and right edges and left two pale strips. It takes the smaller side and anchors top-left now, which lands on the icon rather than on its shadow |
 | 2026-08-19 | The icon verified on the simulator home screen | Pass | Light appearance renders the mark on its cream ground at icon size. Dark and tinted carry no background of their own, because iOS composites them onto its own backdrop; the mark is lifted off the artwork by luminance, which keeps every antialiased edge including the hairline around the head |
+| 2026-08-20 | `G2-J5I` — export existed in three documents and no code | **Gap closed** | `DataExportRequestV1/ResultV1` were named in TDD §4.1, `MemoryRepository.export` in its own repository line, and an export in PRD §6.4 — while Settings said 导出尚未实现 and `FAIL-029` recorded that export did not exist at all. `DataCategory`, `DataExportCoverage` and `DataExportWriter` implement the local half. DEC-042 |
+| 2026-08-20 | `DataExportTests` | Pass, 17 tests | Every PRD category exactly once; `empty` and `unavailable` never conflated; memory covers every character including removed ones; conversations stay `partial` even when empty; no filesystem path, `file://` or asset byte in the written file; storage refusal writes nothing and leaves the earlier export in place; a file that does not read back is deleted and reported as a failure; a new export replaces the previous one, in place when both fall in the same second; an unreadable store fails rather than exporting nothing |
+| 2026-08-20 | An export built from the App's own state under-reported the device | **Fail before fix, found on the running app** | The first draft passed `AppModel.installedPack`, which is set only by an import in the current session — nothing reloads a travel pack at launch. A pack sealed in the store on a previous run was therefore missing from an export whose entire promise is completeness. `TravelPackInstaller.installed()` now reads the store, and the export asks the owner. Three tests in `TravelPackInstallerTests` cover the listing, including a pack whose content no longer decodes |
+| 2026-08-20 | The Settings route to the memory list opened nothing on Map | **Fail before fix, found while adding the third destination** | The sheet was attached to `ChatStageView`, so `openFromSettings(.memoryList)` set the flag while its host was not in the hierarchy. Both Settings destinations now hang off `RootShellView`, where Settings itself is presented |
+| 2026-08-20 | The export produced and read back on the running app | Pass, real device state | Native build on `iPhone 17 Pro`. Two seeded memory records — one belonging to a character that is no longer installed — three installed character packages and a travel pack sealed by an earlier session produced `joi-export-2026-08-20-160124.json`, 4,745 bytes, digest `74733136…`, matching what the screen reported. The file holds no filesystem path, no `file://` and no asset bytes, and regenerating replaced the previous export rather than adding a second copy |
+| 2026-08-20 | Failure corpus after `G2-J5I` | 19 implemented, 5 partial, 8 absent | Unchanged counts, and deliberately: `FAIL-029` loses its "export does not exist at all" sentence and stays **partial**, because character-package import still cannot name required against available — that needs a widened failure taxonomy the Kotlin core mirrors and the conformance vectors cover, which is a contract decision of its own |
+| 2026-08-20 | Full lane after `G2-J5I` | Pass | `check_prd_tdd.py` 24 P0 traced; `JoiMobileTests` **178 tests**, 1 skipped, 0 failures on `iPhone 17 Pro`; six package suites **174 tests**, 7 skipped (CompanionCore 21, CharacterRuntime 79, ChatFeature 27, MapFeature 1, OfflinePack 45, SyncClient 1); Python `Tests/` 43 and `Backend/` 16; the private CharacterRuntime lane runs at **1 skip** (the optional motion package) rather than 5; native build restored, installed and launched |
+| 2026-08-20 | What `G2-J5I` does **not** do | **Open, stated rather than hidden** | No granular category deletion and no complete-delete action (PRD §6.4), no remote tombstone, acknowledgement or retention receipt, and no analytics (`JM-P0-024`). A travel pack installed in an earlier session is exported but is still not reloaded into the Map surface at launch — the pre-existing gap this work found and did not close. Sharing the file out of the app is the system share sheet's, so what happens after it leaves is not evidence this repository holds |
+| 2026-08-21 | Handoff audit: Android Filament construction | Compile/test pass, runtime evidence absent | `./gradlew test` configured and compiled the Android app including `VrmStage.kt`; 5 app state-owner tests passed. This proves source compatibility only. No emulator/device launch, screenshot, MToon, pose, animation, spring bone, expression, resource-release or frame-rate evidence exists, so the uncommitted Android work remains a geometry-only spike rather than a completed VRM runtime |
+| 2026-08-21 | `G2-J5J` — the verified walk survives a relaunch | Focused pass | `TravelPackImportTests` **10 tests** and OfflinePack **50 tests**. A later `AppModel` restores the exact pack and starts neither a walk nor location; changed hashes and added files refuse restoration; a failed pointer falls back once and is cleared. DEC-043 |
+| 2026-08-21 | Two existing travel-pack path boundaries were unsafe | **Fail before fix**, negative controls now pass | `packID/version` were interpolated into `packs/packID@version` after only a non-empty check, and `/candidate-escape` satisfied `hasPrefix(/candidate)`, allowing an out-of-root symlink route to be read without its bytes being declared. Schema plus runtime identifier checks and component-boundary containment close both paths |
+| 2026-08-21 | Full lane after `G2-J5J` | Pass | `check_prd_tdd.py` 24 P0 traced; `JoiMobileTests` **180 tests**, 1 skipped, 0 failures on `iPhone 17 Pro`; six package suites **179 tests**, 7 skipped (CompanionCore 21, CharacterRuntime 79, ChatFeature 27, MapFeature 1, OfflinePack 50, SyncClient 1); Python `Tests/` 44 and `Backend/` 16; default XcodeGen generic simulator build passed; `Tools/run_native.sh` restored, installed and launched the Live2D + VRM build. Simulator only — no device, flight-mode, GPS, storage-pressure or performance claim |
+| 2026-08-22 | `G2-J5K` native Map surface on the running app | Pass, simulator evidence | Apple's Shanghai street and POI map rendered behind the verified route; the whole route, completed segment, numbered stops and accepted walking position remained legible through pan and zoom. Route overview restored the whole corridor, My Location recentered the accepted position, and MapKit feature selection stayed available. A 50% on-route update and a 76% update 341 m off route both rendered; the latter produced the orange marker and west-northwest return guidance. The fixed actions reached recap, Chat and end-walk without covering the primary navigation. This is simulator UI/state evidence only, not real GPS or field navigation evidence. |
+| 2026-08-22 | Focused `G2-J5K` verification | Pass | **36 tests**, 0 failures: ArriveAndTell 10, CachedWalk 6, MapPresentation 4, RouteStory 6 and TravelPackImport 10. The two visible-copy contract checks pass and `check_prd_tdd.py` traces all 24 P0 requirements. Map presentation tests prove non-empty route framing, exact partial-route interpolation and bounded user-follow framing without making MapKit the route-state owner. |
+| 2026-08-22 | Full lane after `G2-J5K` | Pass | `JoiMobileTests` **184 tests**, 1 environment skip, 0 failures on `iPhone 17 Pro`; six package suites **179 tests**, 7 skips (CompanionCore 21, CharacterRuntime 79, ChatFeature 27, MapFeature 1, OfflinePack 50, SyncClient 1); Python `Tests/` 44 and `Backend/` 16; the XcodeGen generic simulator build passed; `Tools/run_native.sh` then restored, installed and launched the Live2D + VRM build. Open gates: real-device GPS and permission behavior, flight-mode/offline-basemap truth, compact-device layout, outdoor legibility, full VoiceOver/Dynamic Type/Reduce Motion, frame rate, energy and thermal evidence. |
+| 2026-08-24 | `G2-J5L` real Apple Maps search on the running app | Pass, simulator/network evidence | From the verified Shanghai walk, submitting `上海博物馆` showed the disclosed loading state and then eight real Apple Maps matches. Selecting `上海博物馆(人民广场馆)` dismissed the sheet, centered its map marker and showed `中国上海市黄浦区人民大道201号`; clearing restored the full route, and reopening search showed an empty field/result state. No location prompt appeared. This proves UI/provider integration on the simulator, not device GPS, provider availability, search quality or field behavior. |
+| 2026-08-24 | Focused `G2-J5L` verification | Pass | `MapSearchTests` 7 and `MapPresentationTests` 5: **12 tests**, 0 failures. Blank/offline refusal, unknown-network attempt, route-region forwarding, 12-result bound, empty-vs-failed, late stale result suppression, close-and-forget and selected-result framing all pass. The visible-copy guard and String Catalog JSON parse pass. |
+| 2026-08-24 | Full lane after `G2-J5L` | Pass | `check_prd_tdd.py` traces 24 P0 requirements; `JoiMobileTests` **192 tests**, 1 environment skip, 0 failures on `iPhone 17 Pro`; six package suites **179 tests**, 7 skips (CompanionCore 21, CharacterRuntime 79, ChatFeature 27, MapFeature 1, OfflinePack 50, SyncClient 1); Python `Tests/` 44 and `Backend/` 16; generated-corpus and String Catalog JSON parse, copy guards and `git diff --check` pass. The first generic build attempt found an incomplete old ZIPFoundation checkout under `/tmp/JoiMobileDerived`; that derived cache was moved aside, and the required clean-path generic build passed. `Tools/run_native.sh` then restored, installed and launched the Live2D + VRM build. Simulator/network evidence only — no real-device GPS, field search quality, provider SLA, flight-mode, accessibility, energy or thermal claim. |
+| 2026-08-25 | `G2-J5M` Chat → Map on the running native app | Pass, simulator UI evidence | An accepted user row exposed “在地图中查找”; the preview kept the original line visible beside an editable query and said conversation, current position and memory would not travel. Accept switched from the same character's Chat to the live MapKit route and opened Search with the exact line prefilled. Search remained in its idle “搜索路线附近的地点” state — no loading/results appeared and no automatic submit occurred. Text editing itself is deterministic/unit evidence rather than a claimed Computer Use success because the host UI driver's direct SwiftUI binding edits were unreliable. |
+| 2026-08-25 | Focused `G2-J5M` verification | Pass | `MapHandoffTests` 4 and `MapSearchTests` 8: **12 tests**, 0 failures. Active-user-line eligibility, companion/fabricated refusal, zero-write proposal/cancel, empty refusal, character/thread/session/transcript continuity, edited exact-once query delivery, and provider-zero-call prefill all pass. Catalog JSON, visible-copy guard, PRD/TDD trace and `git diff --check` pass. |
+| 2026-08-25 | Full lane after `G2-J5M` | Pass | Default XcodeGen and generic simulator build pass; `JoiMobileTests` **197 tests**, 1 environment skip, 0 failures on `iPhone 17 Pro`; six package suites **179 tests**, 7 skips (CompanionCore 21, CharacterRuntime 79, ChatFeature 27, MapFeature 1, OfflinePack 50, SyncClient 1); Python `Tests/` 44 and `Backend/` 16; three generated corpora, String Catalog JSON, copy guards, 24-P0 PRD/TDD trace and `git diff --check` pass. `Tools/run_native.sh` finally regenerated the native project, verified `FrameworkMetallibs`, installed and launched the Live2D + VRM build. Simulator only — no device, field, full accessibility, energy, thermal, provider SLA or release claim. |
+| 2026-08-25 | `G2-J5N` selected destination → Apple Maps on the running app | Pass, simulator/network/system-app evidence | A real `上海博物馆` search returned eight Apple Maps results. Selecting `上海博物馆(人民广场馆)` centered the marker and replaced the unrelated cached-walk action with a destination drawer that says it is not a cultural-route stop. The first confirmation was cancelled and the destination remained. The second sent the selected name/coordinate and Apple Maps opened its driving planner as `我的位置 → 上海博物馆(人民广场馆)`. An unrelated first-run notification prompt in Apple Maps was closed without granting notification permission. This proves the simulator integration path, not device GPS, route quality, live traffic, provider SLA or field behavior. |
+| 2026-08-25 | `G2-J5N` visual QA found disclosure below the useful viewport | **Fail before fix**, then pass | The first result drawer duplicated name/address already shown in the Map header, leaving the non-cultural-route/provider boundary outside the default viewport; after removing the duplicate, the long `Label` still existed only in the accessibility tree until it received a constrained multiline container. The final drawer gives the boundary its own readable information block while keeping return/import and the driving primary action visible. Compact devices, long localized strings and complete Dynamic Type/VoiceOver/Reduce Motion remain deferred gates. |
+| 2026-08-25 | Focused `G2-J5N` verification and failure corpus | Pass | `SystemMapHandoffTests` 4, `MapSearchTests` 8 and `MapPresentationTests` 5: **17 tests**, 0 failures. Proposal/cancel zero-call, exact once-only destination, invalid-coordinate refusal, system-open refusal/retry, search cancellation and viewport geometry pass. The corpus moves `FAIL-028` from absent to implemented: **20 implemented, 5 partial, 7 absent**. Catalog JSON, visible-copy guard and 24-P0 PRD/TDD trace pass. |
+| 2026-08-25 | Full lane after `G2-J5N` | Pass | Default XcodeGen and generic simulator build pass; `JoiMobileTests` **201 tests**, 1 host-condition skip, 0 failures on `iPhone 17 Pro`; six package suites **179 tests**, 7 conditional skips (CompanionCore 21, CharacterRuntime 79, ChatFeature 27, MapFeature 1, OfflinePack 50, SyncClient 1); Python `Tests/` 44 and `Backend/` 16. `Tools/run_native.sh` regenerated the native project, built, installed and launched the Live2D + VRM app. Simulator only — no device, location, field, full accessibility, energy, thermal, Apple Maps SLA or release claim. |
 
-That sentence described the first slice, and most of it has since been overtaken: the composer, the push-to-talk button, the character runtime surface, the Map card, the source button and — as of `G2-J5E` — the profile control are all real. Navigation beyond a cached corridor, accounts, sync and a production backend are still absent, and the surfaces that touch them say so rather than standing in for them.
+That sentence described the first slice, and most of it has since been overtaken: the composer, the push-to-talk button, the character runtime surface, the Map card, the source button and — as of `G2-J5E` — the profile control are all real. In-app navigation beyond a cached corridor, accounts, sync and a production backend are still absent; driving can now leave through the explicit system-Maps handoff, and the remaining surfaces say what is missing rather than standing in for it.
 
 ## PoC evidence
 
@@ -348,6 +460,68 @@ G1 first-slice Closeout is approved with conditions and has no remaining `Rework
 | Content & Trust | Approved with conditions | Editable `zh-Hans` recovery/rights copy and HTTPS-only authored source; rights confirmation workflow remains G5. |
 | Trust & Safety | Approved with conditions | No-follow staging, strict graph/content policy, quarantine, activation lease and journaled removal are mandatory; veto retained. |
 | Quality & Release | Approved with conditions | Exact dependency/notice, deterministic corpus, fault recovery, private 0-skip lane, simulator and bundle evidence required; G4/G5/G6 remain open. |
+
+### G2-J5K Closeout
+
+| Director | Closeout decision | Remaining condition |
+|---|---|---|
+| Product Design | Approved with conditions | The primary Map journey is usable at the tested size; compact devices, landscape, Dynamic Type and Reduce Motion still need visual validation. |
+| Technical | Approved | MapKit remains a presentation consumer; route progress, location and session ownership did not move, and focused plus full lanes pass. |
+| Content & Trust | Approved with conditions | Cached-route versus network-basemap copy is explicit and editable; provider/data-rights and cultural-source release evidence remain G5/G6. |
+| Trust & Safety | Approved | Map entry requests no location, follow begins only through Start Walk, and stopping retires the visible walking position through the existing owner. |
+| Map / Offline | Approved with conditions | Interactive online basemap and cached overlays are functional; downloaded tile regions, airplane-mode basemap behavior and production map matching remain open. |
+| Quality & Release | Approved with conditions | Simulator interaction, screenshots, tests, generic build and final native restore pass; real-device GPS, field, accessibility and performance evidence remain mandatory. |
+
+Studio Closeout is **Approved with conditions** for `G2-J5K`. The placeholder-map defect is closed for the current online-basemap scope; this is not a release approval and does not close the documented device, offline-tile, rights, localization or accessibility gates.
+
+### G2-J5L Closeout
+
+| Director | Closeout decision | Remaining condition |
+|---|---|---|
+| Product Design | Approved with conditions | Name/address search, selection, clear and recovery are usable at the tested size; compact-device, long-address, Dynamic Type and Reduce Motion review remain. |
+| Technical | Approved | Search has one cancellable transient owner, generation suppresses stale results, and no public route/journey/source contract or unique state owner changed. |
+| Content & Trust | Approved with conditions | Apple/provider and online boundaries are adjacent to the action, and results are not labelled as Joi sources; map-data terms and production cultural/source review remain G5/G6. |
+| Trust & Safety | Approved with conditions | Explicit submit, route-region-only request, no live GPS, logging, persistence, transcript or memory write pass; production Apple data disclosure/privacy review remains mandatory. |
+| Map / Offline | Approved with conditions | Real provider search, marker selection and route recovery pass; search is online-only and creates no route, directions or offline promise. |
+| Quality & Release | Approved with conditions | Deterministic, full-lane, clean generic build, native restore and simulator interaction pass; real-device, provider availability, degraded-state visual, accessibility and field evidence remain open. |
+
+Studio Closeout is **Approved with conditions** for `G2-J5L`. The Map's direct
+name/address discovery gap is closed for transient online Apple search; Journey
+3, Joi place confirmation/correction, route creation, offline search and release
+gates remain open.
+
+### G2-J5M Closeout
+
+| Director | Closeout decision | Remaining condition |
+|---|---|---|
+| Product Design | Approved with conditions | The inspected manual branch is usable at the tested size; a contextual Joi offer, long-input/compact-device and full Dynamic Type/Reduce Motion review remain. |
+| Technical | Approved | The proposal and one-time query are App-only, public contracts and unique state owners stayed frozen, and focused/full lanes pass. |
+| AI & Companion | Approved with conditions | No heuristic or companion-generated intent was introduced; typed backend place intent and ambiguity candidates remain unbuilt. |
+| Content & Trust | Approved with conditions | Selected text is never labelled as confirmed place/source truth and disclosure copy is editable; sourced cultural identity remains open. |
+| Trust & Safety | Approved | Proposal/cancel write and transmit nothing; acceptance carries only edited text inside the App; Apple Maps still requires a separate disclosed submit. |
+| Map / Offline | Approved with conditions | Map consumes one prefill without search; place resolution, route creation, directions and offline search remain open. |
+| Quality & Release | Approved with conditions | 197 App tests, 179 package tests, 60 Python tests, generic build, native restore and simulator path pass; device and complete accessibility evidence remain mandatory. |
+
+Studio Closeout is **Approved with conditions** for `G2-J5M`. The inspected
+manual Chat → Map transfer gap is closed. Journey 3 remains partial until a typed
+contextual offer can resolve ambiguity into a sourced Joi place and create a
+cultural route; this is not a release approval.
+
+### G2-J5N Closeout
+
+| Director | Closeout decision | Remaining condition |
+|---|---|---|
+| Product Design | Approved with conditions | The selected destination is actionable without implying the cached route serves it; compact devices, long addresses and complete Dynamic Type/Reduce Motion review remain. |
+| Technical | Approved | External driving has one App-only adapter/state machine; `RoutePlanningProvider`, public contracts, unique owners and cached-route truth did not move. |
+| Content & Trust | Approved with conditions | Apple provenance, non-cultural-route status and transmitted fields are visible in editable `zh-Hans`; production system-provider/legal and cultural-route content review remain G5/G6. |
+| Trust & Safety | Approved | Cancel sends nothing; confirm sends only the selected name/coordinate once; invalid/refused openings fail closed; no transcript, memory or Joi-held location travels. |
+| Map / Offline | Approved with conditions | Apple Maps received the exact driving destination and owns planning; in-app cultural-route creation, backend routing, offline arbitrary rerouting and device field behavior remain open. |
+| Quality & Release | Approved with conditions | 201 App tests, 179 package tests, 60 Python tests, corpus/copy/trace guards, generic build, native restore and simulator/system-app flow pass; device, complete accessibility and provider-availability evidence remain mandatory. |
+
+Studio Closeout is **Approved with conditions** for `G2-J5N`. `FAIL-028` and the
+external driving-destination dead end are closed for the tested simulator path.
+Journey 3 remains partial for typed contextual offers, sourced Joi identity and
+cultural-route creation; this is not release approval.
 
 Independent Closeout found no `Rework` or `Blocked` decision for this bounded slice. `G2-J1A` is closed with conditions. This does not close complete G2, `JM-P0-015`, `JM-P0-017`, G4 or G5.
 

@@ -49,6 +49,140 @@ final class TravelPackInstallerTests: XCTestCase {
         XCTAssertEqual(recap.filter(\.isFact).count, 1, "one sourced stop, one reflection")
     }
 
+    /// `G2-J5J`: the pointer saved by the App is only a preference. A later
+    /// process has to rebuild the walk from the sealed bytes and their checks.
+    func testAnInstalledPackCanBeRestoredByItsExactIdentity() async throws {
+        let fixture = try PackFixture()
+        defer { fixture.cleanup() }
+        _ = try await TravelPackInstaller(root: fixture.store).install(from: fixture.candidate)
+
+        let restored = try await TravelPackInstaller(root: fixture.store).restore(
+            packID: "pack.test",
+            version: "1.0.0"
+        )
+
+        XCTAssertEqual(restored.title, "测试路线包")
+        XCTAssertEqual(restored.stops.count, 2)
+        XCTAssertTrue(restored.route.cached)
+    }
+
+    /// A pack changed after installation is not restored merely because its
+    /// identity still has a directory in the store.
+    func testRestoreRechecksTheSealedHashes() async throws {
+        let fixture = try PackFixture()
+        defer { fixture.cleanup() }
+        let installed = try await TravelPackInstaller(root: fixture.store).install(from: fixture.candidate)
+        try Data("tampered after install".utf8).write(
+            to: installed.rootURL.appendingPathComponent("route.json")
+        )
+
+        await Self.assertThrows(.hashMismatch("route.json")) {
+            try await TravelPackInstaller(root: fixture.store).restore(
+                packID: "pack.test",
+                version: "1.0.0"
+            )
+        }
+    }
+
+    /// Restore also repeats the negative half of integrity: a valid hash list
+    /// cannot make an undeclared payload trusted.
+    func testRestoreRefusesContentAddedAfterInstallation() async throws {
+        let fixture = try PackFixture()
+        defer { fixture.cleanup() }
+        let installed = try await TravelPackInstaller(root: fixture.store).install(from: fixture.candidate)
+        try Data("not declared".utf8).write(
+            to: installed.rootURL.appendingPathComponent("added-after-install.txt")
+        )
+
+        await Self.assertThrows(.undeclaredFile("added-after-install.txt")) {
+            try await TravelPackInstaller(root: fixture.store).restore(
+                packID: "pack.test",
+                version: "1.0.0"
+            )
+        }
+    }
+
+    /// Both strings become one directory component. Non-empty is not enough:
+    /// traversal in either value would put the sealed tree outside `packs/`.
+    func testStoreIdentityCannotContainAPath() async throws {
+        for (packID, version) in [("../../escaped", "1.0.0"), ("pack.test", "../escaped")] {
+            let fixture = try PackFixture(packID: packID, version: version)
+            defer { fixture.cleanup() }
+
+            await Self.assertThrows(.invalidManifest) {
+                try await TravelPackInstaller(root: fixture.store).install(from: fixture.candidate)
+            }
+            XCTAssertFalse(
+                FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("escaped@1.0.0").path)
+            )
+        }
+    }
+
+    /// A lexical prefix is not a filesystem boundary. `candidate-escape` used
+    /// to pass the `hasPrefix(candidate)` check and let an un-hashed route file
+    /// supply the walk through a symlink.
+    func testASymlinkToASiblingWithTheSamePrefixIsOutsideThePack() async throws {
+        let fixture = try PackFixture(routePath: "linked/route.json")
+        defer { fixture.cleanup() }
+        let sibling = fixture.root.appendingPathComponent("candidate-escape", isDirectory: true)
+        try FileManager.default.createDirectory(at: sibling, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(
+            at: fixture.candidate.appendingPathComponent("route.json"),
+            to: sibling.appendingPathComponent("route.json")
+        )
+        try FileManager.default.createSymbolicLink(
+            at: fixture.candidate.appendingPathComponent("linked"),
+            withDestinationURL: sibling
+        )
+
+        await Self.assertThrows(.unsupportedEntry("linked/route.json")) {
+            try await TravelPackInstaller(root: fixture.store).install(from: fixture.candidate)
+        }
+    }
+
+    // MARK: - What the store holds
+
+    /// A pack installed in one session is still listed by a later one.
+    ///
+    /// This is what an export has to ask (`JM-P0-023`). The App's own
+    /// `installedPack` is only the active one, so an inventory built from it
+    /// would omit other identities the device is holding.
+    func testAnInstalledPackIsListedByALaterInstallerOverTheSameStore() async throws {
+        let fixture = try PackFixture()
+        defer { fixture.cleanup() }
+        _ = try await TravelPackInstaller(root: fixture.store).install(from: fixture.candidate)
+
+        let listed = await TravelPackInstaller(root: fixture.store).installed()
+
+        XCTAssertEqual(listed.count, 1)
+        XCTAssertEqual(listed.first?.packID, "pack.test")
+        XCTAssertEqual(listed.first?.version, "1.0.0")
+        XCTAssertEqual(listed.first?.title, "测试路线包")
+        XCTAssertFalse(listed.first?.rights.isEmpty ?? true, "rights travel with the inventory")
+    }
+
+    /// An empty store lists nothing, and does not fail for want of a directory.
+    func testAnEmptyStoreListsNothing() async throws {
+        let fixture = try PackFixture()
+        defer { fixture.cleanup() }
+        let listed = await TravelPackInstaller(root: fixture.store).installed()
+        XCTAssertEqual(listed, [])
+    }
+
+    /// A pack whose content no longer decodes is still installed, so it is still
+    /// listed — without a title, rather than not at all.
+    func testAPackWithUnreadableContentIsStillListed() async throws {
+        let fixture = try PackFixture()
+        defer { fixture.cleanup() }
+        let installed = try await TravelPackInstaller(root: fixture.store).install(from: fixture.candidate)
+        try Data("{".utf8).write(to: installed.rootURL.appendingPathComponent("route.json"))
+
+        let listed = await TravelPackInstaller(root: fixture.store).installed()
+
+        XCTAssertEqual(listed.first?.packID, "pack.test")
+        XCTAssertNil(listed.first?.title)
+    }
+
     // MARK: - FAIL-025 offlinePackMissing
 
     func testADeclaredFileThatIsNotThereIsMissingRatherThanInvalid() async throws {
@@ -314,6 +448,8 @@ private struct PackFixture {
     init(
         store: URL? = nil,
         schema: String = "joi.travel-pack.v1",
+        packID: String = "pack.test",
+        version: String = "1.0.0",
         rights: [String] = ["Repository-authored test fixture"],
         expiresAt: Date? = nil,
         routePath: String = "route.json",
@@ -361,9 +497,9 @@ private struct PackFixture {
 
         var manifest: [String: Any] = [
             "schema": schema,
-            "packID": "pack.test",
+            "packID": packID,
             "routeID": "pack.route",
-            "version": "1.0.0",
+            "version": version,
             "locales": ["zh-Hans"],
             "routePath": routePath,
             "files": [

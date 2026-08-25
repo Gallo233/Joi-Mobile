@@ -51,12 +51,31 @@ struct RootShellView: View {
         }
         .background(Color(.systemGroupedBackground))
         .animation(.snappy(duration: 0.28), value: model.isWelcomePresented)
-        .task { await model.restoreActiveCharacter() }
+        .task {
+            await model.restoreActiveCharacter()
+            await model.restoreActiveTravelPack()
+        }
         .sheet(isPresented: $model.isCharacterLibraryPresented) {
             CharacterLibraryView(model: model)
         }
         .sheet(isPresented: $model.isSettingsPresented) {
             SettingsView(model: model)
+        }
+        .sheet(isPresented: Binding(get: { model.isDataExportPresented }, set: { if !$0 { model.dismissDataExport() } })) {
+            DataExportView(model: model)
+        }
+        // Both of these are reached from Settings, and Settings is presented
+        // here. The memory list used to hang off `ChatStageView`, which meant
+        // the Settings route to it opened nothing at all while the user was on
+        // Map — the sheet's host was not in the hierarchy. Found while adding
+        // the third destination to `openFromSettings`.
+        .sheet(isPresented: Binding(get: { model.isMemoryListPresented }, set: { if !$0 { model.dismissMemoryList() } })) {
+            MemoryListView(model: model)
+        }
+        // Root owns this sheet so accepting it may replace Chat with Map without
+        // also removing the presentation host mid-dismissal.
+        .sheet(item: Binding(get: { model.mapHandoffDraft }, set: { if $0 == nil { model.rejectMapHandoff() } })) { draft in
+            MapHandoffPreviewSheet(model: model, draft: draft)
         }
     }
 }

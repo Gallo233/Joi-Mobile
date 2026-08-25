@@ -308,6 +308,8 @@ private actor InMemoryStore: MemoryRepository {
     func delete(recordID: String) async throws {
         records.removeAll { $0.recordID == recordID }
     }
+
+    func export() async throws -> [MemoryRecordV1] { records }
 }
 
 private struct StoreFixture {

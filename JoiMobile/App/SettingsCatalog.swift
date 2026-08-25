@@ -38,6 +38,7 @@ enum SettingsGroup: String, CaseIterable, Identifiable, Sendable {
 enum SettingsDestination: Equatable, Sendable {
     case characterLibrary
     case memoryList
+    case dataExport
 }
 
 /// One row of Settings.
@@ -246,7 +247,12 @@ enum SettingsCatalog {
             SettingsRow(
                 .privacyAndData,
                 title: String(localized: "导出"),
-                detail: String(localized: "导出尚未实现。")
+                // `G2-J5I`. The copy names the one thing an export deliberately
+                // leaves out, on the row itself: someone exporting to move to a
+                // new phone needs to know before they tap that the character's
+                // model files are not in it.
+                detail: String(localized: "把记忆、当前对话与已安装内容导出成一个可读文件；角色包的资源文件不在其中。"),
+                destination: .dataExport
             ),
         ]
     }
