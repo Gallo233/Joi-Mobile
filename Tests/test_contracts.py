@@ -303,6 +303,7 @@ class ContractArtifactTests(unittest.TestCase):
             # attachment, so both are guarded here rather than only Chat.
             "JoiMobile/App/MapExperienceView.swift",
             "JoiMobile/App/NativeMapSurface.swift",
+            "JoiMobile/App/RouteStopBrowser.swift",
             "JoiMobile/App/TravelRouteLibraryView.swift",
             "JoiMobile/App/MapSearch.swift",
             "JoiMobile/App/MapHandoff.swift",

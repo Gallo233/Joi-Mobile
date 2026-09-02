@@ -680,3 +680,35 @@
   result → sourced Joi place, route creation, backend `/v1/routes`, arbitrary
   offline rerouting, basemap cache, deletion, Android UI, device/field,
   accessibility or release evidence.
+
+## DEC-050 — Route-stop inspection is presentation, not arrival
+
+- **Status:** Accepted with content and device conditions
+- **Date:** 2026-09-02
+- **Decision:** every authored stop on the current cached cultural route is
+  inspectable from its numbered marker or a complete ordered itinerary before
+  and during a walk. The App stores only transient route/stop identities and
+  resolves displayed content back through the current `RouteNarrative`.
+- **Why this is not progress.** Reading a stop from home, or while standing
+  elsewhere, proves neither arrival nor engagement. Inspection has no route to
+  `JourneyContextStore`, `ConfirmedPlace`, recap completion or the memory path;
+  only the existing location/progress owner may mark a stop reached.
+- **Trust boundary.** A factual stop displays the immutable revision IDs carried
+  by the verified pack and says the content is cached/not rechecked online. A
+  reflective stop says it is the character's uncited view. A revision string is
+  not upgraded into the publisher, authority, support, freshness or withdrawal
+  fields of a full `SourceProjectionV1` that this pack does not contain.
+- **Invalidation and cross-result behavior.** Changing route identity, removing
+  a selected stop or presenting an invalid stop ID clears selection. Choosing a
+  transient Apple search result also clears route-stop inspection; selecting a
+  route stop clears that external result. Identical stop IDs therefore cannot
+  carry presentation authority across routes.
+- **Privacy and offline behavior:** the itinerary and details read only cached
+  in-memory route content and start no provider, network, permission, location,
+  persistence, transcript, memory or analytics operation. Apple's basemap
+  availability remains a separate labelled fact.
+- **Not changed or claimed:** no arrival confirmation, source freshness check,
+  publisher authenticity, speech playback, route download/creation, online
+  rerouting, offline basemap, Android UI, device/field, complete accessibility
+  or release evidence. `DEC-049` is intentionally left to the concurrent
+  portfolio-demonstration lane already in progress in the original checkout.

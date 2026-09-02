@@ -1,8 +1,19 @@
 # Joi Mobile Status
 
-Last updated: 2026-08-25
+Last updated: 2026-09-02
 
 ## Current phase
+
+`G2-J5P` joins the numbered route markers to the narration already inside each
+verified or bundled route. Every marker is now tappable, and “路线站点” opens the
+complete authored order before a walk begins. Selection recenters the map and
+shows exact cached narration, previous/next controls and either the pack's
+immutable revision IDs or an explicit “角色感想 · 无资料引用” boundary. This is
+read-only presentation: it requests no location/network, marks no arrival,
+advances no progress and writes no place, journey, Chat, memory or analytics
+state. Simulator visual QA caught unreadable hierarchical secondary text on the
+Map material; the final detail uses explicit high-contrast text while preserving
+disabled-control hierarchy. DEC-050.
 
 `G2-J5O` turns the travel-pack store from a hidden implementation detail into an
 explicit Map choice. “文化路线” now lists the labelled bundled sample and every
@@ -42,10 +53,12 @@ still cannot become a sourced Joi place or cultural route. DEC-046.
 
 `G2-J5K` replaces Map's route-shaped placeholder with a usable native MapKit surface. The verified or bundled walk now appears over Apple's interactive street and POI map with the full route, completed segment, numbered stops and the accepted walking position; people can pan and zoom, restore the route overview, follow their current position after starting, inspect a selected map feature, review the itinerary, ask in Chat and end the walk without leaving the surface. The persistent drawer keeps route state and the primary action reachable instead of compressing them into one row. The boundary is explicit: the route, stops, narration, progress and return-to-route guidance are cached Joi data, while Apple's basemap needs a network connection. Entering Map still requests no location; location starts only with the walk and is retired when it ends. Search, arbitrary route planning, turn-by-turn driving, downloadable/offline basemap tiles and a production MapLibre/Ferrostar integration remain outside this slice. DEC-044.
 
-The current completed iOS/contract/documentation work through `G2-J5N`, including
-the `G2-J1B` re-review candidate, is published to the private GitHub repository
-`Gallo233/Joi-Mobile` on `codex/j1b-character-installer` at catch-up commit
-`5e09efc`. The unfinished Android geometry spike remains local and uncommitted.
+The completed baseline through `G2-J5O`, including the `G2-J1B` re-review
+candidate, is published to the private GitHub repository `Gallo233/Joi-Mobile`
+on `codex/j1b-character-installer` at `c4bf4cc`. `G2-J5P` is isolated on
+`codex/map-route-stops` because a concurrent portfolio-demonstration lane owns
+overlapping files in the original checkout. The unfinished Android geometry
+spike remains local and uncommitted there.
 No deployment, cloud resource, vendor contact, license application or App Store
 submission has been made.
 
@@ -184,6 +197,26 @@ On 2026-08-12 the J1B candidate was independently re-verified on this workstatio
 | Trust & Safety | Approved | Local read/reverify only; no location/network/upload/delete; invalid content fails closed and preserves the active route. Veto retained. |
 | Map / Offline | Approved with conditions | Switching is idle-only and resets route-scoped projections; downloads, signatures, offline basemap and field navigation remain open. |
 | Quality & Release | Approved with conditions | Negative-path tests, copy guard, simulator visual flow, full required lane and final `Tools/run_native.sh` are mandatory; device evidence remains open. |
+
+### G2-J5P Studio brief
+
+- Outcome: make every authored cultural-route stop inspectable before and during a walk, from either its numbered map marker or one complete ordered itinerary, without treating browsing as arrival or journey progress.
+- Crew: sequential Studio Director plus Product, Technical, Content & Trust, Trust & Safety, Map/Offline and Quality passes; the Studio integrator is the sole writer and no subagent is used at the user's request.
+- Ownership: App owns only transient stop selection, the itinerary presentation and editable `zh-Hans`; `RouteNarrative` remains the source of ordered stop content and `JourneyContextStore` remains the only progress owner. Public contracts, `project.yml`, `CompanionSessionStore` and `SpeechCoordinator` are frozen.
+- Privacy/safety boundary: browsing is local cached-content presentation. It requests no location or network, invokes no provider, creates no confirmed place, progress, transcript, memory, source projection or analytics event, and never marks a stop complete.
+- Recovery: changing routes clears the old selection; choosing Apple search clears stop selection; returning to route clears the external result; an invalid/stale stop identity resolves to no selection rather than showing content from another route.
+- Required evidence: selection/reordering/stale-ID state tests; marker and itinerary selection; source-revision versus character-reflection labelling; catalog/copy guards; simulator pre-walk and active-walk review; full required lane and final native-runtime restore.
+
+### G2-J5P Scheme decisions
+
+| Director | Decision | Conditions / owner |
+|---|---|---|
+| Product Design | Approved with conditions | Numbered markers must be tappable, the full itinerary must be discoverable before walking, and the start/stop action must stay reachable while details grow. |
+| Technical | Approved | Keep selection App-local and transient; route identity changes invalidate it and no shared/public contract or unique state owner may change. |
+| Content & Trust | Approved with conditions | Cached narration must visibly distinguish factual lines carrying revision IDs from uncited character reflection; do not upgrade a revision ID into a full source projection. |
+| Trust & Safety | Approved | Browsing is read-only and zero-request; it must not confirm a place, advance progress, attach context, retain content or trigger permissions. Veto retained. |
+| Map / Offline | Approved with conditions | Marker selection may recenter presentation only; route geometry, progress and offline-return semantics remain unchanged, and Apple basemap availability stays separately labelled. |
+| Quality & Release | Approved with conditions | Invalid IDs, route replacement, ordered navigation and zero-owner-mutation tests plus simulator UI evidence, copy checks, full lane and final `Tools/run_native.sh` are mandatory; device and complete accessibility evidence remain open. |
 
 ## Scheme gates
 
@@ -422,6 +455,10 @@ G0 is closed with no `Rework` or `Blocked` decision. Public contract implementat
 | 2026-08-25 | `G2-J5O` visual QA found current-route trust facts faded | **Fail before fix**, then pass | The first current row used SwiftUI `.disabled`, which faded its title, version and rights to poor contrast. Current and unreadable rows are now non-button presentations instead of disabled buttons; only actual route choices are buttons. The final current row keeps normal text contrast and a separate checkmark. Compact devices and complete Dynamic Type/VoiceOver/Reduce Motion remain deferred. |
 | 2026-08-25 | Focused `G2-J5O` verification | Pass | `TravelPackImportTests` **14 tests**, 0 failures: four new cases cover exact installed identity selection/relaunch, tampered listed-content refusal with current-route preservation, sample-pointer clearing without deletion, and active-walk refusal. Generated-project compile, catalog JSON and the route-library surface-copy guard pass. |
 | 2026-08-25 | Full lane after `G2-J5O` | Pass | `check_prd_tdd.py` traces 24 P0 requirements; default XcodeGen and generic simulator build pass; `JoiMobileTests` **205 tests** total (**204 passed, 1 host-condition skip**) on `iPhone 17 Pro`; six package suites **179 tests**, 7 conditional skips (CompanionCore 21, CharacterRuntime 79, ChatFeature 27, MapFeature 1, OfflinePack 50, SyncClient 1); Python `Tests/` 44 and `Backend/` 16. `Tools/run_native.sh` finally regenerated the native project, verified its runtime resources, installed and launched the Live2D + VRM app. Simulator/local-store evidence only — no device, GPS, flight-mode field, full accessibility, publisher-authenticity, energy, thermal or release claim. |
+| 2026-09-02 | Focused `G2-J5P` verification | Pass | Generated-project compile plus `RouteStopBrowserTests` 5 and `MapPresentationTests` 6: **11 tests**, 0 failures. Valid-only selection, route/removal invalidation, ordered non-wrapping previous/next, unchanged narrative progress and exact stop viewport all pass. |
+| 2026-09-02 | `G2-J5P` itinerary/marker/detail on the running app | Pass, simulator/local-content evidence | The imported two-stop test route opened a complete pre-walk itinerary. Selecting from the list and tapping each numbered marker directly recentered the correct stop; one showed its cached factual narration and exact `fixture://sources/app@2026-08-18` revision, the other showed the uncited-character-reflection label. Previous/next boundaries, selected-marker emphasis, the active-walk detail and fixed start/end action were all reachable. This is UI/accessibility-tree evidence on one simulator size, not device location, field, source freshness or complete accessibility validation. |
+| 2026-09-02 | `G2-J5P` visual QA found unreadable drawer hierarchy | **Fail before fix**, then pass | SwiftUI's hierarchical `.secondary` style became near-white/pale-indigo over the iOS 26 Map material, making narration and source/reflection status unreadable. The final drawer uses explicit primary-color contrast for body, status and revision text while keeping disabled previous/next visually subordinate. Compact screens, long production content, Dynamic Type, VoiceOver and Reduce Motion remain deferred. |
+| 2026-09-02 | Full lane after `G2-J5P` | Pass | `check_prd_tdd.py` traces 24 P0 requirements; default XcodeGen and the required generic simulator build pass; `JoiMobileTests` **211 tests** total (**210 passed, 1 host-condition skip**) on `iPhone 17 Pro`; six package suites **179 tests**, 7 conditional skips (CompanionCore 21, CharacterRuntime 79, ChatFeature 27, MapFeature 1, OfflinePack 50, SyncClient 1); Python `Tests/` 44 and `Backend/` 16. The isolated worktree initially carried no ignored vendor SDKs, so the mandatory `Tools/run_native.sh` correctly refused; temporary read-only symlinks to the original checkout's existing `Vendor/Live2D` and `Vendor/VRMMetalKit` then let the same script regenerate, build, verify `FrameworkMetallibs`, install and launch the native app. Simulator/local-content evidence only — no device, GPS, field, source-freshness, full accessibility, energy, thermal or release claim. |
 
 That sentence described the first slice, and most of it has since been overtaken: the composer, the push-to-talk button, the character runtime surface, the Map card, the source button and — as of `G2-J5E` — the profile control are all real. In-app navigation beyond a cached corridor, accounts, sync and a production backend are still absent; driving can now leave through the explicit system-Maps handoff, and the remaining surfaces say what is missing rather than standing in for it.
 
@@ -578,6 +615,23 @@ Studio Closeout is **Approved with conditions** for `G2-J5O`, pending only the
 recorded release/device gates rather than slice rework. Journey 3's existing-route
 choice is closed; typed place intent, sourced place resolution and new cultural
 route creation remain partial. This is not release approval.
+
+### G2-J5P Closeout
+
+| Director | Closeout decision | Remaining condition |
+|---|---|---|
+| Product Design | Approved with conditions | Numbered markers and the complete pre-walk itinerary are discoverable and actionable at the tested size; compact devices, long content and full Dynamic Type/Reduce Motion review remain. |
+| Technical | Approved | Selection is App-only transient identity state, route changes invalidate it, the three unique owners/public contracts stayed frozen, and focused/full lanes pass. |
+| Content & Trust | Approved with conditions | Exact cached narration distinguishes immutable revision IDs from uncited reflection without claiming full source projection or online freshness; production source/content review remains G5/G6. |
+| Trust & Safety | Approved | Browsing invokes no permission, location, network, provider, persistence, progress, confirmation, Chat, memory or analytics path; invalid/stale identities fail closed. Veto retained. |
+| Map / Offline | Approved with conditions | Marker/list selection, recentering, previous/next and active-walk coexistence pass; route creation/download, offline basemap, field navigation and source freshness remain open. |
+| Quality & Release | Approved with conditions | 211 App tests, 179 package tests, 60 Python tests, trace/copy/catalog guards, generic build, native restore and simulator interaction pass; real-device and complete accessibility evidence remain mandatory. |
+
+Studio Closeout is **Approved with conditions** for `G2-J5P`, with no `Rework`
+or `Blocked` decision for this bounded slice. Existing cached routes are now
+inspectable without manufacturing arrival or source authority. This is not a
+release approval and does not close see-and-ask, route creation/download,
+publisher authenticity, offline-basemap or device/field gates.
 
 Independent Closeout found no `Rework` or `Blocked` decision for this bounded slice. `G2-J1A` is closed with conditions. This does not close complete G2, `JM-P0-015`, `JM-P0-017`, G4 or G5.
 

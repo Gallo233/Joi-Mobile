@@ -1215,6 +1215,31 @@ download a route, prove publisher authenticity, resolve an Apple result into a
 sourced Joi place, create a new cultural route, call `/v1/routes`, add offline
 basemap tiles or prove device/field navigation. DEC-048.
 
+### 6.31 G2-J5P — Inspect every authored stop without pretending to arrive
+
+`G2-J5K` drew numbered cultural stops and `G2-J4B` carried their cached
+narration, but the two never met in the product before location advanced a walk.
+Custom annotations were pictures rather than controls, and “行程回顾” existed
+only after a stop had already been reached. `G2-J5P` makes the authored route
+inspectable before and during a walk while keeping inspection outside journey
+truth.
+
+| Slice ID | Acceptance | Module / interface | Required evidence |
+|---|---|---|---|
+| `J5P-01` | Every numbered route annotation is a semantic button; choosing it highlights and recenters that exact authored stop | App / `NativeMapSurface`, `MapRoutePresentation.routeStopRegion` | simulator marker interaction and viewport test |
+| `J5P-02` | A persistent “路线站点” action opens every stop in `RouteNarrative` order before a walk starts, with suggested time and cached-fact/reflection status | App / `RouteItineraryView` | simulator list/select flow and ordered-state tests |
+| `J5P-03` | The drawer shows the exact cached name/narration and either immutable source-revision IDs or an explicit uncited-character-reflection label; a revision ID is not presented as a full `SourceProjectionV1` | App / `RouteStopInspectionCard` | factual/reflection visual review and copy guard |
+| `J5P-04` | Previous/next follows the current narrative order, does not wrap, and keeps the existing start/stop action reachable | App / `RouteStopBrowser`, contextual drawer | boundary tests and simulator pre-walk/active-walk review |
+| `J5P-05` | Inspection holds only transient route/stop IDs. Invalid IDs, removed stops and route replacement clear selection instead of showing stale content | App / `RouteStopBrowser` | invalid/removal/route-change tests |
+| `J5P-06` | Browsing starts no location or network work and cannot confirm a place, complete a stop, advance progress, attach Chat context, write memory or emit analytics | App presentation boundary | unchanged narrative-state test and interface review |
+| `J5P-07` | Search-result selection clears route-stop selection, while returning to route clears external-result state; neither result is promoted across the boundary | App / `NativeMapSurface` | simulator state transition review |
+| `J5P-08` | All new visible copy is editable `zh-Hans`, and the surface-copy guard includes the new itinerary/detail source file | App + Tests / String Catalog, `test_contracts.py` | catalog parse and copy guard |
+
+This closes the pre-walk route-inspection gap for existing cached routes. It
+does not claim a source publisher beyond the IDs carried by the pack, online
+freshness, arrival, route creation/download, offline basemap, device location or
+field navigation. DEC-050.
+
 ## 7. Map, navigation and offline PoC
 
 - The current online basemap is native MapKit and never owns route truth. A later
@@ -1359,7 +1384,7 @@ The first slice is complete when traceability, XcodeGen generation, generic simu
 | JM-P0-005 | Layered local memory | CompanionCore, App, SyncClient | `MemoryRepository`, `MemoryProposalV1`, `MemoryRecordV1` | `MemoryProposalTests`, `StateOwnerTests` location case, `DataExportTests` whole-store case | G3 |
 | JM-P0-006 | Cross-surface continuity | CompanionCore, App | `CompanionSessionStore`, `JourneyContextSnapshot`, `JourneyUseReceiptV1` | `JourneyConsentTests`, `JourneyAttachmentTests`, `MapHandoffTests` | G1/G3 |
 | JM-P0-007 | Speech coordination | CompanionCore, App | `SpeechCoordinator`, `MouthOpening`, `SpeechInterruptionPolicy` | `SpeechCoordinationTests`, `MouthOpeningTests`, `SpeechInterruptionTests`, `SpeechFailureTests`; real call/Siri/headset evidence remains G4 | G2/G4 |
-| JM-P0-008 | Persistent Map experience | MapFeature, App | `JourneyContextStore`, MapKit presentation, drawer state | `CachedWalkTests`, `MapPresentationTests` | G2/G4 |
+| JM-P0-008 | Persistent Map experience | MapFeature, App | `JourneyContextStore`, MapKit presentation, drawer state | `CachedWalkTests`, `MapPresentationTests`, `RouteStopBrowserTests` | G2/G4 |
 | JM-P0-009 | Arrive-and-tell | OfflinePack, App | `PlaceResolver`, `PlaceProposal`, `ConfirmedPlace`, `MapSearchModel` | `PlaceResolverTests`, `ArriveAndTellTests`, `MapSearchTests`; **partial** — Apple search results remain presentation-only rather than confirmed/sourced Joi places; GPS field script remains G4 | G2/G4 |
 | JM-P0-010 | See-and-ask | MapFeature, Backend | vision upload contract | **not implemented** — no capture or recognition path exists | G3/G4 |
 | JM-P0-011 | Cultural walking navigation | MapFeature, Backend | `NavigationProvider`, route API | `RouteProgressEngineTests`, `CachedWalkTests`; **no Ferrostar integration**, outdoor walk remains G4 | G2/G4 |

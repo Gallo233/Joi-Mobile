@@ -23,8 +23,10 @@ struct NativeMapSurface: View {
     @State private var selectedMapFeature: MapFeature?
     @State private var selectedSearchResult: MapSearchResult?
     @State private var isSearchPresented = false
+    @State private var isItineraryPresented = false
     @State private var searchModel = MapSearchModel()
     @State private var systemMapHandoff = SystemMapHandoffModel()
+    @State private var routeStopBrowser = RouteStopBrowser()
 
     var body: some View {
         GeometryReader { proxy in
@@ -39,6 +41,7 @@ struct NativeMapSurface: View {
             .background(Color(.secondarySystemBackground))
         }
         .onAppear {
+            synchronizeRouteStopBrowser()
             showRoute(animated: false)
             receivePendingSearch()
         }
@@ -47,6 +50,8 @@ struct NativeMapSurface: View {
             selectedSearchResult = nil
             searchModel.clear()
             systemMapHandoff.reset()
+            synchronizeRouteStopBrowser()
+            isItineraryPresented = false
             showRoute()
         }
         .onChange(of: model.walkLocation.latest) { _, observation in
@@ -87,10 +92,20 @@ struct NativeMapSurface: View {
                     coordinate: MapRoutePresentation.coordinate(entry.stop.coordinate),
                     anchor: .bottom
                 ) {
-                    RouteStopMarker(
-                        number: index + 1,
-                        completed: entry.completion == .completed
+                    Button {
+                        selectRouteStop(entry.stop.stopID)
+                    } label: {
+                        RouteStopMarker(
+                            number: index + 1,
+                            completed: entry.completion == .completed,
+                            selected: routeStopBrowser.selectedStopID == entry.stop.stopID
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(
+                        String(localized: "第 \(index + 1) 站：\(entry.stop.name)")
                     )
+                    .accessibilityHint(String(localized: "查看缓存讲解和资料版本"))
                 }
             }
 
@@ -135,6 +150,14 @@ struct NativeMapSurface: View {
                 reachability: model.networkMonitor.reachability,
                 region: MKCoordinateRegion(MapRoutePresentation.routeRect(for: model.walk.route.coordinates)),
                 onSelect: selectSearchResult
+            )
+        }
+        .sheet(isPresented: $isItineraryPresented) {
+            RouteItineraryView(
+                routeTitle: model.walk.title,
+                stops: model.narrativeState.stops,
+                selectedStopID: routeStopBrowser.selectedStopID,
+                onSelect: selectRouteStop
             )
         }
         .confirmationDialog(
@@ -294,7 +317,11 @@ struct NativeMapSurface: View {
                                 )
                         }
 
-                        RouteStoryStrip(state: model.narrativeState)
+                        if let selection = selectedRouteStop {
+                            routeStopInspection(selection)
+                        } else {
+                            RouteStoryStrip(state: model.narrativeState)
+                        }
                         ArriveAndTellPanel(model: model)
                         if selectedSearchResult != nil {
                             Label(
@@ -339,6 +366,8 @@ struct NativeMapSurface: View {
                             in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                         )
                         .accessibilityElement(children: .combine)
+                    } else if let selection = selectedRouteStop {
+                        routeStopInspection(selection)
                     } else {
                         Label(
                             String(localized: "与 \(characterName) 一起走"),
@@ -405,14 +434,19 @@ struct NativeMapSurface: View {
                 drawerButton(String(localized: "返回文化路线"), systemImage: "point.topleft.down.to.point.bottomright.curvepath") {
                     showRoute()
                 }
-            } else if !model.walkRecap.isEmpty {
-                drawerButton(String(localized: "行程回顾"), systemImage: "list.bullet.rectangle") {
-                    model.isRecapPresented = true
+            } else {
+                drawerButton(String(localized: "路线站点"), systemImage: "list.number") {
+                    isItineraryPresented = true
                 }
-            }
-            if model.canOfferJourneyAttachment, selectedSearchResult == nil {
-                drawerButton(String(localized: "在对话里问"), systemImage: "bubble.left.and.text.bubble.right") {
-                    Task { await model.offerJourneyAttachment() }
+                if !model.walkRecap.isEmpty {
+                    drawerButton(String(localized: "行程回顾"), systemImage: "list.bullet.rectangle") {
+                        model.isRecapPresented = true
+                    }
+                }
+                if model.canOfferJourneyAttachment {
+                    drawerButton(String(localized: "在对话里问"), systemImage: "bubble.left.and.text.bubble.right") {
+                        Task { await model.offerJourneyAttachment() }
+                    }
                 }
             }
             if !model.isWalking {
@@ -507,12 +541,16 @@ struct NativeMapSurface: View {
         if selectedSearchResult != nil {
             return min(max(totalHeight * 0.42, 330), 360)
         }
+        if selectedRouteStop != nil {
+            return min(max(totalHeight * 0.46, 340), 390)
+        }
         return 252
     }
 
     private func showRoute(animated: Bool = true) {
         cameraMode = .route
         selectedSearchResult = nil
+        routeStopBrowser.clear()
         systemMapHandoff.reset()
         let position = MapCameraPosition.rect(
             MapRoutePresentation.routeRect(for: model.walk.route.coordinates)
@@ -527,11 +565,72 @@ struct NativeMapSurface: View {
     private func selectSearchResult(_ result: MapSearchResult) {
         selectedMapFeature = nil
         selectedSearchResult = result
+        routeStopBrowser.clear()
         systemMapHandoff.reset()
         cameraMode = .free
         withAnimation(.easeInOut(duration: 0.35)) {
             cameraPosition = .region(MapRoutePresentation.searchResultRegion(around: result.coordinate))
         }
+    }
+
+    private var routeStopIDs: [String] {
+        model.narrativeState.stops.map(\.stop.stopID)
+    }
+
+    private var selectedRouteStop: StopProgress? {
+        guard let stopID = routeStopBrowser.selectedStopID else { return nil }
+        return model.narrativeState.stops.first { $0.stop.stopID == stopID }
+    }
+
+    private func synchronizeRouteStopBrowser() {
+        routeStopBrowser.synchronize(
+            routeID: model.walk.route.routeID,
+            stopIDs: routeStopIDs
+        )
+    }
+
+    private func selectRouteStop(_ stopID: String) {
+        guard routeStopBrowser.select(
+            stopID: stopID,
+            routeID: model.walk.route.routeID,
+            stopIDs: routeStopIDs
+        ), let selection = selectedRouteStop else { return }
+
+        selectedMapFeature = nil
+        selectedSearchResult = nil
+        systemMapHandoff.reset()
+        cameraMode = .free
+        withAnimation(.easeInOut(duration: 0.35)) {
+            cameraPosition = .region(
+                MapRoutePresentation.routeStopRegion(around: selection.stop.coordinate)
+            )
+        }
+    }
+
+    private func moveRouteStop(by offset: Int) {
+        guard let stopID = routeStopBrowser.move(
+            by: offset,
+            routeID: model.walk.route.routeID,
+            stopIDs: routeStopIDs
+        ) else { return }
+        selectRouteStop(stopID)
+    }
+
+    private func routeStopInspection(_ selection: StopProgress) -> some View {
+        let index = routeStopBrowser.selectedIndex(in: routeStopIDs) ?? 0
+        return RouteStopInspectionCard(
+            entry: selection,
+            number: index + 1,
+            total: routeStopIDs.count,
+            canSelectPrevious: index > 0,
+            canSelectNext: index + 1 < routeStopIDs.count,
+            onSelectPrevious: { moveRouteStop(by: -1) },
+            onSelectNext: { moveRouteStop(by: 1) },
+            onClose: {
+                routeStopBrowser.clear()
+                showRoute()
+            }
+        )
     }
 
     private var systemMapConfirmationBinding: Binding<Bool> {
@@ -555,6 +654,7 @@ struct NativeMapSurface: View {
 private struct RouteStopMarker: View {
     let number: Int
     let completed: Bool
+    let selected: Bool
 
     var body: some View {
         ZStack {
@@ -570,7 +670,12 @@ private struct RouteStopMarker: View {
                     .foregroundStyle(.teal)
             }
         }
-        .frame(width: 30, height: 30)
+        .frame(width: selected ? 36 : 30, height: selected ? 36 : 30)
+        .overlay {
+            if selected {
+                Circle().stroke(Color.indigo, lineWidth: 3)
+            }
+        }
         .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
     }
 }

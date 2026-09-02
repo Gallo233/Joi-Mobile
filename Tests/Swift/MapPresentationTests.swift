@@ -66,4 +66,14 @@ final class MapPresentationTests: XCTestCase {
         XCTAssertGreaterThan(region.span.latitudeDelta, 0)
         XCTAssertGreaterThan(region.span.longitudeDelta, 0)
     }
+
+    func testRouteStopRegionCentersOnTheAuthoredStop() {
+        let coordinate = CachedWalk.sample.narrative.stops[1].stop.coordinate
+        let region = MapRoutePresentation.routeStopRegion(around: coordinate)
+
+        XCTAssertEqual(region.center.latitude, coordinate.latitude, accuracy: 0.000_001)
+        XCTAssertEqual(region.center.longitude, coordinate.longitude, accuracy: 0.000_001)
+        XCTAssertGreaterThan(region.span.latitudeDelta, 0)
+        XCTAssertGreaterThan(region.span.longitudeDelta, 0)
+    }
 }

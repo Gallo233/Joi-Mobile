@@ -51,6 +51,14 @@ enum MapRoutePresentation {
         )
     }
 
+    static func routeStopRegion(around coordinate: GeoCoordinate) -> MKCoordinateRegion {
+        MKCoordinateRegion(
+            center: self.coordinate(coordinate),
+            latitudinalMeters: 550,
+            longitudinalMeters: 550
+        )
+    }
+
     /// Returns a path ending exactly at `progress`, rather than merely choosing
     /// the nearest authored waypoint. That keeps the visible walked portion in
     /// lockstep with the progress percentage emitted by the route engine.
